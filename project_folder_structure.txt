@@ -1,0 +1,73 @@
+tolet_ai_services/
+│
+├── app/
+│   │
+│   ├── __init__.py
+│   │
+│   ├── main.py
+│   │
+│   ├── routes/
+│   │   │
+│   │   ├── __init__.py
+│   │   └── chat_routes.py
+│   │
+│   ├── services/
+│   │   │
+│   │   ├── __init__.py
+│   │   │
+│   │   ├── ai_chat/
+│   │   │   │
+│   │   │   ├── __init__.py
+│   │   │   │
+│   │   │   ├── chat_service.py
+│   │   │   ├── conversation_memory.py
+│   │   │   ├── ranking_engine.py
+│   │   │   ├── response_ai.py
+│   │   │   └── intent_detector.py
+│   │   │
+│   │   ├── extractors/
+│   │   │   │
+│   │   │   ├── __init__.py
+│   │   │   │
+│   │   │   ├── rule_based_extractor.py
+│   │   │   ├── llm_extractor.py
+│   │   │   └── hybrid_extractor.py
+│   │   │
+│   │   ├── translation/
+│   │   │   │
+│   │   │   ├── __init__.py
+│   │   │   │
+│   │   │   ├── language_detector.py
+│   │   │   ├── sarvam_translator.py
+│   │   │   ├── translation_cleaner.py
+│   │   │   └── translation_pipeline.py
+│   │   │
+│   │   ├── llm/
+│   │   │   │
+│   │   │   ├── __init__.py
+│   │   │   │
+│   │   │   ├── llm_client.py
+│   │   │   └── prompts.py
+│   │   │
+│   │   └── mock/
+│   │       │
+│   │       ├── __init__.py
+│   │       └── mock_property_service.py
+│   │
+│   └── utils/
+│       │
+│       ├── __init__.py
+│       └── helpers.py
+│
+├── tests/
+│   │
+│   ├── __init__.py
+│   └── test_chat.py
+│
+├── .env
+│
+├── requirements.txt
+│
+├── ui.py
+│
+└── README.md
