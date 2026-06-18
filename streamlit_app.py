@@ -172,9 +172,7 @@ for message in st.session_state.messages:
                     render_property_card(property_item)
 
 
-# ===================================
-# Chat Input & API Call
-# ===================================
+
 query = st.chat_input("Ask your rental query...")
 
 if query:

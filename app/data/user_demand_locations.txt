@@ -103,3 +103,10 @@
 [2026-06-02 10:03:44] Location: Noida | Query: can u list the properties on Noida
 [2026-06-02 10:04:15] Location: Noida | Query: any near location from Noida
 [2026-06-03 17:33:38] Location: Noida, Sector 18, Sector 62... | Query: i want properties on Noida
+[2026-06-11 16:42:31] Location: Pallikaranai | Query: i want property on Pallikaranai
+[2026-06-11 16:49:40] Location: Pallikaranai | Query: I want property from Palikarani
+[2026-06-11 16:51:55] Location: Pallikaranai | Query: I want property in Pallikaranai
+[2026-06-11 16:52:47] Location: Pallikaranai | Query: I want property in Pallikaranai
+[2026-06-11 17:01:03] Location: Pallikaranai | Query: I want property from Pallikarani
+[2026-06-11 17:06:58] Location: Vadapalani | Query: Vadapalani property
+[2026-06-11 17:09:15] Location: Vadapalani | Query: Vadapalani Property

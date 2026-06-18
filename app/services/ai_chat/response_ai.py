@@ -26,7 +26,9 @@ class ResponseAI:
         filters: dict,
         properties: list,
         intent: str,
-        session_messages: list = None
+        session_messages: list = None,
+        geo_original_location: str = None,
+        geo_expanded_areas: list = None
     ) -> str:
 
         try:
@@ -42,7 +44,9 @@ class ResponseAI:
                 query=query,
                 filters=filters,
                 properties=properties,
-                intent=intent
+                intent=intent,
+                geo_original_location=geo_original_location,
+                geo_expanded_areas=geo_expanded_areas
             )
 
             messages = self.builder.build(

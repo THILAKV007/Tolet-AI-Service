@@ -245,6 +245,32 @@ class PropertyDBService:
         }
 
     # ===================================
+    # Get All Distinct Localities from DB
+    # Used by GeoExpander to check nearby
+    # areas that actually have listings,
+    # instead of blind Nominatim grid scan.
+    # ===================================
+    def get_all_localities(self) -> list:
+        if self.collection is None:
+            return []
+        try:
+            localities = self.collection.distinct("locality")
+            cities     = self.collection.distinct("city")
+
+            combined = set()
+            for val in localities + cities:
+                if val and isinstance(val, str) and val.strip():
+                    combined.add(val.strip().title())
+
+            result = sorted(combined)
+            print(f"[PropertyDBService] get_all_localities: {len(result)} unique areas found.")
+            return result
+
+        except Exception as e:
+            print(f"[PropertyDBService] get_all_localities error: {e}")
+            return []
+
+    # ===================================
     # Close (MongoDB manages its own pool)
     # ===================================
     def close(self):

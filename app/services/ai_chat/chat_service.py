@@ -11,6 +11,7 @@ from services.knowledge.tolet_knowledge import ToletKnowledge
 from services.knowledge.knowledge_detector import KnowledgeDetector
 from services.mock.property_db_service import PropertyDBService
 from services.session.session_store import SessionStore
+from services.geo.geo_expander import GeoExpander
 
 
 
@@ -29,6 +30,7 @@ class ChatService:
         self.tolet_knowledge      = ToletKnowledge()
         self.knowledge_detector   = KnowledgeDetector()
         self.session_store        = SessionStore()
+        self.geo_expander         = GeoExpander()
 
     # ===================================
     # Location Match Validator
@@ -132,6 +134,42 @@ class ChatService:
             previous_filters=filters_for_extraction
         )
 
+        # ===================================
+        # Geo Expand — DB-First (4 km radius)
+        #
+        # If the user gave a specific locality
+        # (not a full city/state expand), check
+        # our DB for nearby areas that actually
+        # have listings within 4 km.
+        #
+        # Only runs for property search intents.
+        # Skips if location_expand is already set
+        # (city/state search already has its list).
+        # ===================================
+        geo_original_location = None   # what the user originally asked for
+        geo_expanded_areas    = []     # nearby areas we actually searched
+
+        if (
+            intent in {"property_search", "refilter", "recommendation"}
+            and filters.get("location")
+            and not filters.get("location_expand")
+        ):
+            all_localities = self.property_service.get_all_localities()
+
+            if all_localities:
+                print(f"[ChatService] DB has {len(all_localities)} localities. Checking 4km around '{filters['location']}'")
+                expanded = self.geo_expander.expand_from_db(
+                    location       = filters["location"],
+                    all_localities = all_localities
+                )
+                # Only upgrade to expand if we found more than just the original
+                if len(expanded) > 1:
+                    geo_original_location = filters["location"]
+                    geo_expanded_areas    = [a for a in expanded if a != geo_original_location]
+                    filters["location_expand"] = expanded
+                    filters["location"]        = None
+                    print(f"[ChatService] Geo expanded '{geo_original_location}' -> nearby: {geo_expanded_areas}")
+
 
         ranked_properties = []
 
@@ -197,7 +235,9 @@ class ChatService:
             filters=response_filters,
             properties=response_properties,
             intent=intent,
-            session_messages=session_messages
+            session_messages=session_messages,
+            geo_original_location=geo_original_location,
+            geo_expanded_areas=geo_expanded_areas
         )
 
         self._save_turn(

@@ -69,7 +69,9 @@ class HistoryBuilder:
         query: str,
         filters: dict,
         properties: list,
-        intent: str
+        intent: str,
+        geo_original_location: str = None,
+        geo_expanded_areas: list = None
     ) -> str:
 
         prop_text = ""
@@ -148,11 +150,33 @@ class HistoryBuilder:
                 parts.append(f"Tenant: {filters['tenant_type']}")
             filter_text = "\nFilters applied: " + ", ".join(parts)
 
+        # ===================================
+        # Geo Context — tells the AI WHY
+        # results from nearby areas are shown
+        # when user asked for a specific area
+        # ===================================
+        geo_text = ""
+        if geo_original_location:
+            if geo_expanded_areas:
+                nearby_str = ", ".join(geo_expanded_areas)
+                geo_text = (
+                    f"\n\nGeo Search Context: User asked for '{geo_original_location}'. "
+                    f"We have no direct listings there, so we searched nearby areas within 4 km: {nearby_str}. "
+                    f"If properties are found, mention that these are from nearby areas close to {geo_original_location}. "
+                    f"If no properties found either, say no listings in {geo_original_location} or nearby areas right now."
+                )
+            else:
+                geo_text = (
+                    f"\n\nGeo Search Context: User asked for '{geo_original_location}'. "
+                    f"We searched but found no nearby areas with listings within 4 km."
+                )
+
         return (
             f"User message: {query}\n"
             f"Detected intent: {intent}"
             f"{filter_text}"
-            f"{prop_text}\n\n"
+            f"{prop_text}"
+            f"{geo_text}\n\n"
             f"Respond naturally as Tolet AI."
         )
 
