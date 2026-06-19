@@ -110,3 +110,6 @@
 [2026-06-11 17:01:03] Location: Pallikaranai | Query: I want property from Pallikarani
 [2026-06-11 17:06:58] Location: Vadapalani | Query: Vadapalani property
 [2026-06-11 17:09:15] Location: Vadapalani | Query: Vadapalani Property
+[2026-06-18 16:45:53] Location: Tambaram | Query: i want property on tambaram
+[2026-06-19 12:24:23] Location: Tiruvottiyur | Query: i want property on Tiruvottiyur
+[2026-06-19 12:30:34] Location: Perungudi | Query: can u list the property from Perungudi

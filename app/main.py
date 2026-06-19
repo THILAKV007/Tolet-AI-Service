@@ -51,6 +51,6 @@ async def root():
     return {
 
         "message": (
-            "Tolet AI Backend Running 🚀"
+            "Tolet AI Backend Running.."
         )
     }

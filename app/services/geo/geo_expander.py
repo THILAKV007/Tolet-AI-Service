@@ -44,8 +44,8 @@ INDIA_LOCALITY_COORDS = {
 
     # ── Chennai West / Central ───────────────────────
     "Vadapalani":      (13.0510, 80.2129),
-    "Kk Nagar":        (13.0489, 80.2001),   # your DB uses this
-    "K.K. Nagar":      (13.0489, 80.2001),   # alias
+    "Kk Nagar":        (13.0489, 80.2001),   
+    "K.K. Nagar":      (13.0489, 80.2001),   
     "Kk Nagar West":   (13.0489, 80.1950),
     "Ashok Nagar":     (13.0393, 80.2217),
     "Kodambakkam":     (13.0491, 80.2253),
