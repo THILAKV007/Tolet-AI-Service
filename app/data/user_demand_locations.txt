@@ -113,3 +113,13 @@
 [2026-06-18 16:45:53] Location: Tambaram | Query: i want property on tambaram
 [2026-06-19 12:24:23] Location: Tiruvottiyur | Query: i want property on Tiruvottiyur
 [2026-06-19 12:30:34] Location: Perungudi | Query: can u list the property from Perungudi
+[2026-06-19 13:07:35] Location: Anna Nagar East, Anna Nagar... | Query: i want property on Anna Nagar East
+[2026-06-19 13:08:55] Location: Porur | Query: PORUR
+[2026-06-19 13:09:31] Location: Porur | Query: i want property from the porur
+[2026-06-19 13:09:54] Location: Kk Nagar | Query: i want property from kk nagar
+[2026-06-19 13:11:11] Location: Velachery | Query: i want property from velachery
+[2026-06-19 13:14:33] Location: Velachery | Query: i want property from velachery
+[2026-06-19 13:20:13] Location: Velachery | Query: i want porperty from velachery
+[2026-06-19 13:22:47] Location: Velachery | Query: i want property from veleachery
+[2026-06-19 13:28:51] Location: Velachery | Query: i want property from velachery
+[2026-06-19 14:09:19] Location: Velachery | Query: can u list the property from velachery

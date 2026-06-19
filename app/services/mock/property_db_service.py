@@ -148,8 +148,14 @@ class PropertyDBService:
     # furnished       → furnishedType
     # near_metro      → availableAmenities.title
     # tenant_type     → preferredTenant
+    # status          → status (always filtered to "presenting")
     # ===================================
     def _apply_common_filters(self, query: dict, filters: dict) -> dict:
+
+        # Always restrict to properties that are actively listed ("approved").
+        # Properties missing the status field entirely are also excluded —
+        # absence of status means not yet approved.
+        query["status"] = {"$eq": "approved"}
 
         if filters.get("bhk"):
             query["bedRoomCount"] = filters["bhk"]
@@ -242,6 +248,8 @@ class PropertyDBService:
             "owner_phone":        doc.get("ownerPhone", ""),
             "owner_whatsapp":     doc.get("ownerWhatsapp", ""),
             "preferred_time":     doc.get("preferredTimeToTalk", []),
+
+            "status":             doc.get("status", ""),
         }
 
     # ===================================
