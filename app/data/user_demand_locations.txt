@@ -1,0 +1,153 @@
+[2026-05-22 23:38:47] Location: bangalore | Query: 2bhk in bangalore
+[2026-05-22 23:40:38] Location: ambattur | Query: ambattur 4bhk
+[2026-05-22 23:42:32] Location: chennai | Query: current chennai real estate news
+[2026-05-24 17:49:46] Location: t nagar | Query: i want property on t nagar
+[2026-05-24 17:51:25] Location: t nagar | Query: can u explain how to choose the best property for me
+[2026-05-24 17:52:29] Location: kk nagar | Query: 2bhk in kk nagar
+[2026-05-24 17:55:42] Location: udsoadsia | Query: 2bhk in udsoadsia
+[2026-05-24 17:56:10] Location: bangalore | Query: bangalore with 3bhk
+[2026-05-24 18:34:41] Location: koyembedu | Query: but i can the the koyembedu property is best for metro
+[2026-05-24 18:35:36] Location: ambattut | Query: 2bhk in ambattut
+[2026-05-24 19:25:00] Location: kodaikanal | Query: 2bhk in kodaikanal
+[2026-05-24 20:04:58] Location: Avadi | Query: Bachelor friendly flat near metro
+[2026-05-25 09:34:11] Location: Tambaram | Query: apartment in tambaram
+[2026-05-25 09:34:26] Location: Ambattur | Query: apartment in ambattur
+[2026-05-25 09:37:55] Location: Avadi | Query: Need 2bhk in Avadi under 20k
+[2026-05-25 09:56:48] Location: Velachery | Query: i meant that velachery pg property is furnished or not
+[2026-05-25 09:57:11] Location: Avadi | Query: Need 2bhk in Avadi under 20k
+[2026-05-25 15:00:03] Location: near me | Query: 2 bhk near me
+[2026-05-25 15:01:58] Location: kk nagar | Query: 2 bhk in kk nagar
+[2026-05-25 15:12:22] Location: india | Query: tell about india
+[2026-05-25 15:27:40] Location: nearby | Query: 3bhk nearby me
+[2026-05-25 15:28:07] Location: perambalur | Query: 2bhk in perambalur
+[2026-05-25 16:22:29] Location: near by me | Query: near by me apartments
+[2026-05-25 16:26:14] Location: nearby | Query: 3bhk nearby me
+[2026-05-25 16:32:06] Location: near me | Query: 2bhk near me
+[2026-05-25 16:54:51] Location: ambattur | Query: location : ambattur, budget : 5000
+[2026-05-25 16:55:29] Location: ambattur | Query: location : ambattur, budget : 5k
+[2026-05-25 17:00:32] Location: bangalore | Query: bangalore within 30k
+[2026-05-26 12:25:54] Location: tambaram | Query: 2bhk in Tambaram
+[2026-05-26 12:26:13] Location: ambattur | Query: 4bhk in ambattur
+[2026-05-26 12:41:18] Location: bangalore | Query: is there any property on bangalore
+[2026-05-26 12:47:19] Location: velachery | Query: i want apartment in velachery with 5k budget
+[2026-05-26 12:51:42] Location: velachery | Query: i want apartment in velachery with 5k budget
+[2026-05-26 12:55:18] Location: my location | Query: is there any property in my location
+[2026-05-26 12:55:58] Location: ambattur | Query: in ambattur below 10k property
+[2026-05-26 14:17:54] Location: ambattur | Query: i want 2bhk in ambattur with 5k budget
+[2026-05-26 14:35:15] Location: near me | Query: rental property near me
+[2026-05-26 14:36:20] Location: kk nagar | Query: kk nagar property
+[2026-05-26 14:36:40] Location: near me | Query: 2bhk near me
+[2026-05-26 14:46:21] Location: near me | Query: rental property near me
+[2026-05-26 14:53:55] Location: nearby me | Query: rental property nearby me
+[2026-05-26 14:55:47] Location: nearby me | Query: rental property nearby me
+[2026-05-26 15:05:35] Location: velachery | Query: i want apartment in velachery within budget 5k
+[2026-05-26 15:20:29] Location: bangalore | Query: i want 2bhk in bangalore with below 40k budget
+[2026-05-26 15:21:49] Location: kk nagar chennai | Query: i want 2bhk in kk nagar, chennai
+[2026-05-26 15:35:09] Location: bangalore | Query: in bangalore
+[2026-05-26 15:36:01] Location: chennai | Query: in chennai
+[2026-05-26 15:39:28] Location: bangalore | Query: in bangalore
+[2026-05-26 15:40:04] Location: chennai | Query: show me 2 BHK flats in Chennai under ₹15,000'
+[2026-05-26 15:40:28] Location: bangalore | Query: in bangalore 3bhk
+[2026-05-26 17:30:30] Location: bangalore | Query: in bangalore 3bhk
+[2026-05-26 17:32:03] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:32:19] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:34:32] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:34:45] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:35:06] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:35:23] Location: bangalore | Query: in bangalore i want 2bhk
+[2026-05-26 17:41:02] Location: ambattur | Query: i want apatment in ambattur.
+[2026-05-26 17:43:14] Location: ambattur | Query: i want flat in ambattur.
+[2026-05-26 17:44:24] Location: ambattur | Query: in ambattur
+[2026-05-26 17:51:45] Location: bangalore | Query: in bangalore with below 40k apartment
+[2026-05-26 17:52:13] Location: andhra | Query: i want 4bhk in andhra with nearby bus stand
+[2026-05-26 17:57:16] Location: kerala | Query: i want 4bhk in kerala with nearby bus stand
+[2026-05-26 17:58:33] Location: gujarat | Query: i need 1rk in gujarat
+[2026-05-26 17:59:25] Location: madurai | Query: i need 3bhk in madurai with nearby railway station
+[2026-05-27 09:52:53] Location: velachery | Query: i want rental property on velachery with below 10k budget
+[2026-05-27 10:07:14] Location: ambattur | Query: in ambattur i want property below 10k
+[2026-05-27 10:08:32] Location: ambattur | Query: i meant why you dont have the property that below 10k on ambattur
+[2026-05-27 11:08:50] Location: Tamil Nadu | Query: which all locations u have properties in Tamil nadu ?
+[2026-05-27 11:09:39] Location: Tamil Nadu | Query: not nearby porur, give me list of properties places in Tamilnadu which u have listed 
+[2026-05-27 11:18:25] Location: noida | Query: I want a rental property in Noida
+[2026-05-27 11:44:37] Location: noida | Query: is there any properties on Noida
+[2026-05-27 21:30:14] Location: noida | Query: i want rental property in Noida
+[2026-05-28 09:12:04] Location: Noida | Query: do you having property in Noida
+[2026-05-28 09:12:45] Location: Noida | Query: fine, is there any other location which is nearby Noida
+[2026-05-28 09:14:02] Location: Tamil Nadu | Query: do you having properties on tamilnadu
+[2026-05-28 09:14:49] Location: Ambattur | Query: i want property on ambattur
+[2026-05-28 09:15:40] Location: Ambattur | Query: yes
+[2026-05-28 09:16:24] Location: Ambattur | Query: i dont ask about ambattur please give any other location properties u having
+[2026-05-28 09:16:52] Location: Tambaram | Query: in tambaram
+[2026-05-28 09:35:32] Location: Avadi | Query: no problem u can give other locations also
+[2026-05-28 09:36:19] Location: Avadi | Query: no problem u can give other locations also with different amenities
+[2026-05-28 09:38:28] Location: Tambaram | Query: is there any properites nearly located on tambaram
+[2026-05-28 09:46:28] Location: Porur | Query: is there any properites nearly located on porur
+[2026-05-28 10:00:26] Location: Velachery | Query: Need a 4BHK fully furnished flat in Velachery under 20k
+[2026-05-28 10:06:52] Location: Tambaram | Query: now list any properties that is available in tambaram
+[2026-05-28 10:30:50] Location: Noida | Query: i want property on noida
+[2026-05-28 10:32:44] Location: Noida | Query: there is no restriction  u can give any properties on noida
+[2026-05-28 10:36:54] Location: Noida | Query: there is no restriction u can give any properties on noida
+[2026-05-28 10:37:33] Location: Noida | Query: fine any near location nearly noid
+[2026-05-28 10:41:43] Location: Velachery | Query: in velachery
+[2026-05-28 10:42:30] Location: Porur | Query: in porur
+[2026-05-28 10:54:25] Location: Tambaram | Query: no problem, u can also give any other location areas that fits metro
+[2026-05-29 07:23:44] Location: Chennai, Coimbatore, Madurai... | Query: can u list any properties that is located on tamilnadu
+[2026-05-29 07:31:11] Location: Chennai, Coimbatore, Madurai... | Query: can u list any properties that is located on tamilnadu
+[2026-05-29 09:41:28] Location: Bangalore, Mysore, Mangalore... | Query: fine, now can u please answer, do you having any properties on karnataka
+[2026-05-29 09:56:36] Location: New Delhi | Query: i want property in new delhi. please list the property that available on delhi, dont list any other property
+[2026-05-29 10:08:32] Location: Kashmir | Query: please list me the properties on Kashmr
+[2026-05-29 14:45:57] Location: Chennai, Coimbatore, Madurai... | Query: can u list few properties that is located on tamilnadu
+[2026-05-29 14:46:41] Location: Chennai, Coimbatore, Madurai... | Query: please list me the properties on tamilnadu
+[2026-05-29 17:50:34] Location: Chennai, Coimbatore, Madurai... | Query: please list the properties on tamil nadu
+[2026-06-02 10:00:10] Location: Noida | Query: i want properties on Noida
+[2026-06-02 10:03:44] Location: Noida | Query: can u list the properties on Noida
+[2026-06-02 10:04:15] Location: Noida | Query: any near location from Noida
+[2026-06-03 17:33:38] Location: Noida, Sector 18, Sector 62... | Query: i want properties on Noida
+[2026-06-11 16:42:31] Location: Pallikaranai | Query: i want property on Pallikaranai
+[2026-06-11 16:49:40] Location: Pallikaranai | Query: I want property from Palikarani
+[2026-06-11 16:51:55] Location: Pallikaranai | Query: I want property in Pallikaranai
+[2026-06-11 16:52:47] Location: Pallikaranai | Query: I want property in Pallikaranai
+[2026-06-11 17:01:03] Location: Pallikaranai | Query: I want property from Pallikarani
+[2026-06-11 17:06:58] Location: Vadapalani | Query: Vadapalani property
+[2026-06-11 17:09:15] Location: Vadapalani | Query: Vadapalani Property
+[2026-06-18 16:45:53] Location: Tambaram | Query: i want property on tambaram
+[2026-06-19 12:24:23] Location: Tiruvottiyur | Query: i want property on Tiruvottiyur
+[2026-06-19 12:30:34] Location: Perungudi | Query: can u list the property from Perungudi
+[2026-06-19 13:07:35] Location: Anna Nagar East, Anna Nagar... | Query: i want property on Anna Nagar East
+[2026-06-19 13:08:55] Location: Porur | Query: PORUR
+[2026-06-19 13:09:31] Location: Porur | Query: i want property from the porur
+[2026-06-19 13:09:54] Location: Kk Nagar | Query: i want property from kk nagar
+[2026-06-19 13:11:11] Location: Velachery | Query: i want property from velachery
+[2026-06-19 13:14:33] Location: Velachery | Query: i want property from velachery
+[2026-06-19 13:20:13] Location: Velachery | Query: i want porperty from velachery
+[2026-06-19 13:22:47] Location: Velachery | Query: i want property from veleachery
+[2026-06-19 13:28:51] Location: Velachery | Query: i want property from velachery
+[2026-06-19 14:09:19] Location: Velachery | Query: can u list the property from velachery
+[2026-06-21 23:46:41] Location: Vadapalani, Kk Nagar, Kk Nagar Chennai... | Query: i want property from vadapalani
+[2026-06-21 23:47:50] Location: Kk Nagar, Kk Nagar Chennai... | Query: i want property from kk nagar
+[2026-06-22 00:39:28] Location: Virugambakkam, Kk Nagar, Kk Nagar Chennai... | Query: 2bhk in virugambakkamn
+[2026-06-22 10:13:35] Location: Vadapalani, Kk Nagar, Kk Nagar Chennai... | Query: i want property from vadapalani
+[2026-06-22 10:34:33] Location: Vadapalani, Kk Nagar, Kk Nagar Chennai... | Query: i want property from vadapalani
+[2026-06-22 11:44:38] Location: Iyappanthangal | Query: I want rental house in Iyappanthangal area
+[2026-06-22 12:06:59] Location: Iyappanthangal | Query: I want rental house in Iyappanthangal area
+[2026-06-22 12:39:08] Location: Adyar | Query: i want from adyar
+[2026-06-22 16:18:07] Location: Ashok Nagar... | Query: can i get property in ashok pillar area for rent ?
+[2026-06-22 16:21:46] Location: Ashok Nagar... | Query: i want property from ashok piller
+[2026-06-22 17:44:46] Location: New Washermenpet, No 32/84 Perumal Kovil Lane, Kottur, Chennai - 600085... | Query: i want property from thirumulluivoyal
+[2026-06-22 18:14:23] Location: Ambattur... | Query: i want property from thirumullaivoyal
+[2026-06-22 18:17:19] Location: Ambattur... | Query: i want property from annanur
+[2026-06-23 14:18:28] Location: Ambattur... | Query: i want property from thirumullaivoyal
+[2026-06-23 14:19:39] Location: Ambattur | Query: i want property from ambattur
+[2026-06-23 14:23:26] Location: Thirumulluivoyal | Query: can i get the property from thirumulluivoyal
+[2026-06-23 14:23:57] Location: Thirumulluivoyal | Query: can i get the property from thirumulluivoyal
+[2026-06-23 14:24:51] Location: Thirumulluivoyal | Query: i want property from thirumulluivoyal
+[2026-06-23 14:26:37] Location: Pattaraivakkam | Query: i want property from pattaraivakkam
+[2026-06-23 14:50:59] Location: Thirumulluivoyal | Query: i want property from thirumulluivoyal
+[2026-06-23 16:38:58] Location: Ekatuthangal | Query: any properties in Ekatuthangal for rent
+[2026-06-23 16:51:47] Location: Korattur | Query: any properties in korattur for rent
+[2026-06-24 10:32:22] Location: Thirumulaivoyal | Query: i want property from thirumulaivoyal
+[2026-06-24 14:11:44] Location: Ekatuthangall | Query: can i get the property from ekatuthangall
+[2026-06-24 14:14:19] Location: Ekkatuthangal | Query: can i get the property from ekatutangal
+[2026-06-24 14:15:50] Location: Ekkatuthangal | Query: can i get the property from ekkatuthangal
+[2026-06-24 14:25:43] Location: Royapuram | Query: i want property from royapuram
+[2026-06-24 14:27:15] Location: Purasaiwakkam | Query: okay, can i get the property from purasaivakkam
