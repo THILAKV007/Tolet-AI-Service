@@ -433,6 +433,20 @@ class ChatService:
         )
 
         # ── Natural language summaries for frontend badges ───────────────────
+        # Only generate these for property-related intents — not greetings,
+        # off-topic, knowledge queries, etc.
+        if intent not in search_intents:
+            return {
+                "success":              True,
+                "query":                query,
+                "intent":               intent,
+                "translated_query":     translation_result["translated_query"],
+                "cleaned_query":        cleaned_query,
+                "filters":              filters,
+                "properties":           ranked_properties,
+                "response":             ai_response,
+            }
+
         area_name = (
             filters.get("location") or
             geo_original_location or
