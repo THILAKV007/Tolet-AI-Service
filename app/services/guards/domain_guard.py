@@ -24,7 +24,7 @@ class DomainGuard:
             "hi", "hello", "hey", "howdy", "hiya", "greetings",
             "good morning", "good evening", "good afternoon",
             "how are you", "how r u", "whats up", "what's up",
-            "sup", "yo", "gm", "gn", "thanks"
+            "sup", "yo", "gm", "gn", "thanks",
 
             # --- Tolet brand ---
             "tolet ai", "tolet",
@@ -33,6 +33,15 @@ class DomainGuard:
             "house", "home", "property", "flat", "apartment", "villa", "pg",
             "bhk", "1bhk", "2bhk", "3bhk", "4bhk",
             "rk", "1rk", "2rk", "room kitchen", "single room", "studio",
+
+            # --- PG / hostel / student stay ---
+            "hostel", "paying guest", "student accommodation", "student housing",
+            "student", "college student", "school student", "bachelor room",
+
+            # --- Commercial ---
+            "commercial", "commercial space", "shop", "shop space", "shop rental",
+            "office", "office space", "workspace", "co-working", "coworking",
+            "godown", "warehouse", "showroom", "retail space",
 
             # --- Rental & real estate terms ---
             "rent", "rental", "lease", "tenant", "landlord", "real estate",
@@ -107,6 +116,16 @@ class DomainGuard:
         ]
 
         # ===================================
+        # Dynamic locations (populated at runtime from the live DB via
+        # add_known_locations()). The static "localities" section above is
+        # only a small hand-picked sample and will always miss most real
+        # DB entries (e.g. Ramapuram, Kotturpuram, Washermenpet, KK Nagar).
+        # A first-turn message naming ANY approved DB location must never
+        # be rejected as off-topic just because it isn't in that shortlist.
+        # ===================================
+        self.dynamic_keywords = set()
+
+        # ===================================
         # LLM Client
         # Used to generate natural out-of-
         # domain replies instead of templates.
@@ -152,16 +171,43 @@ class DomainGuard:
         ]
 
     # ===================================
+    # Populate Dynamic Locations
+    # Call this with the live DB's localities/cities/states so a first-turn
+    # message naming a real, approved-property area (e.g. "Ramapuram",
+    # "Kotturpuram", "Washermenpet") is never rejected as off-topic just
+    # because it's missing from the small hardcoded shortlist above.
+    # ===================================
+    def add_known_locations(self, locations: list) -> None:
+        for loc in locations or []:
+            if not isinstance(loc, str):
+                continue
+            cleaned = loc.strip().lower()
+            if not cleaned:
+                continue
+            self.dynamic_keywords.add(cleaned)
+            # Also add individual tokens (len > 2) so messy DB values like
+            # "111/A AMMAN KOIL STREET BHARATWAJ NAGAR VARAD..." still let
+            # a query mentioning e.g. "amman koil" or "bharatwaj nagar" through.
+            for tok in re.split(r"[,/\s]+", cleaned):
+                if len(tok) > 2:
+                    self.dynamic_keywords.add(tok)
+
+    # ===================================
     # Domain Check
     # Uses whole-word regex matching to
     # prevent substring false positives
     # e.g. "lease" inside "please".
+    # Also checks dynamic (live-DB-sourced) locations as plain substrings,
+    # since those values are free-form addresses, not clean single words.
     # ===================================
     def is_allowed(self, query: str) -> bool:
         query_lower = query.lower().strip()
         for kw in self.allowed_keywords:
             pattern = r'\b' + re.escape(kw) + r'\b'
             if re.search(pattern, query_lower):
+                return True
+        for kw in self.dynamic_keywords:
+            if kw in query_lower:
                 return True
         return False
 

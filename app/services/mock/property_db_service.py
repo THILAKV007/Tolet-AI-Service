@@ -180,6 +180,18 @@ class PropertyDBService:
             query["type"]   = {"$regex": "^broker", "$options": "i"}
             query["status"] = {"$regex": "^approved$", "$options": "i"}
 
+        # ── Property type isolation ──────────────────────────────────────────
+        # DB stores propertyType as "residential", "commercial", or "paid_guest".
+        # If the user's intent is clearly one of these (shop/office/workspace →
+        # commercial, pg/hostel/student-stay → paid_guest, flat/bhk/house →
+        # residential), NEVER let another type leak into the results.
+        property_type = filters.get("property_type")
+        if property_type in ("residential", "commercial", "paid_guest"):
+            query["propertyType"] = {
+                "$regex":   f"^{re.escape(property_type)}$",
+                "$options": "i"
+            }
+
         return query
 
     def get_by_id(self, property_id: str) -> dict:

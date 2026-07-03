@@ -15,20 +15,46 @@ Return ONLY a valid JSON object with these exact keys:
   "furnished": "fully" or "semi" or "unfurnished" or null,
   "near_metro": true or false or null,
   "tenant_type": "bachelor" or "family" or null,
-  "owner_type": "owner" or "broker" or null
+  "owner_type": "owner" or "broker" or null,
+  "property_type": "residential" or "commercial" or "paid_guest" or null
 }
+
+PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
+- Figure out what the property is FOR, from the whole sentence, not a single word.
+- COMMERCIAL: user wants a place to run a business, not to live in. Signals:
+  "shop", "shop rental", "my new shop", "office", "office space", "workspace",
+  "co-working", "coworking", "godown", "warehouse", "showroom", "retail space",
+  "commercial space", "for my business/store/clinic".
+- PAID_GUEST: user wants a PG/hostel-style stay for themselves. Signals: "pg",
+  "hostel", "paying guest", "bachelor room", or the user identifies as a
+  "college student" / "school student" and asks about a place to STAY.
+  IMPORTANT: if the user says "hostel", still return property_type: "paid_guest"
+  (never "residential") — that is the correct DB category for that need.
+- RESIDENTIAL: user clearly wants a home to live in: "flat", "apartment", "house",
+  "villa", "bhk", "family", or a student who explicitly says "apartment"/"flat"
+  WITHOUT mentioning pg/hostel (don't force paid_guest onto every student — only
+  when they ask to "stay" generically or mention pg/hostel).
+- NEVER mix categories. A commercial request must never carry residential or
+  paid_guest signals, and vice versa.
+- If the message has NO type signal at all and no property_type was set in a
+  previous turn, return property_type: null — do not guess "residential" by
+  default. Only infer residential when there IS a positive residential signal
+  (bhk, flat, apartment, house, family, villa), OR carry forward a type already
+  established earlier in the conversation if the topic hasn't changed.
+- If the user explicitly switches type mid-conversation (e.g. "actually I need
+  a shop instead") — override to the new type immediately.
 
 LOCATION RULES:
 - If user mentions a specific area or locality (Avadi, Velachery, Ambattur etc.)
   → set location: "that area name", location_expand: null
 - If user mentions a CITY like Chennai, Bangalore, Hyderabad, Pune, Mumbai, Noida etc.
-  → set location: null, location_expand: [all localities/areas that belong to that city]
-  Use your geography knowledge to list every known locality of that city.
-  Example: Chennai → ["Velachery", "Ambattur", "Anna Nagar", "Avadi", "Tambaram",
-  "Porur", "T Nagar", "Adyar", "OMR", "Nungambakkam", "Chromepet", "Pallavaram",
-  "Sholinganallur", "Perungudi", "Guindy", "Kodambakkam", "Mylapore", "Tondiarpet"]
-  Example: Noida → ["Noida", "Sector 18", "Sector 62", "Sector 63", "Sector 137",
-  "Greater Noida", "Noida Extension", "Indirapuram", "Vaishali", "Kaushambi"]
+  → set location: "<the city name as given>", location_expand: null
+  Do NOT try to guess or enumerate the city's neighborhoods/localities yourself —
+  the app already matches this city name against every property's locality,
+  city, AND state fields, so a plain city name safely finds every listing in
+  that city regardless of which specific neighborhood it's in. Inventing a
+  partial neighborhood list here would hide real listings in neighborhoods you
+  didn't think to include.
 - If user mentions a STATE like Tamil Nadu, Karnataka, Maharashtra, Uttar Pradesh etc.
   → set location: null, location_expand: [top 12 cities/localities of that state only]
   IMPORTANT: Keep the list to EXACTLY 12 items maximum — never exceed this or the response will be truncated and crash.
@@ -100,7 +126,8 @@ Extract the rental filters as JSON.
             "furnished":       None,
             "near_metro":      None,
             "tenant_type":     None,
-            "owner_type":      None
+            "owner_type":      None,
+            "property_type":   None
         }
 
         prev = previous_filters or {}
@@ -141,6 +168,9 @@ Extract the rental filters as JSON.
 
         if extracted.get("owner_type") in ("owner", "broker"):
             clean["owner_type"] = extracted["owner_type"]
+
+        if extracted.get("property_type") in ("residential", "commercial", "paid_guest"):
+            clean["property_type"] = extracted["property_type"]
 
         location_just_set = clean["location"] is not None
         expand_just_set   = clean["location_expand"] is not None

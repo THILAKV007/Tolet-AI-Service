@@ -37,7 +37,7 @@ JSON format:
     "bhk": int or null,
     "max_price": int or null,
     "location": string or null,
-    "property_type": string or null,
+    "property_type": "residential" or "commercial" or "paid_guest" or null,
     "furnished": string or null,
     "near_metro": true or false,
     "tenant_type": string or null,
@@ -52,6 +52,11 @@ Rules:
 - No extra text
 - If value missing return null
 - near_metro must be boolean
+- property_type MUST be exactly one of "residential", "commercial",
+  "paid_guest", or null — this must match the database's stored values
+  exactly. Map "pg" / "hostel" / "paying guest" → "paid_guest",
+  "flat" / "apartment" / "house" / "villa" → "residential",
+  "shop" / "office" / "godown" → "commercial".
 
 """
 

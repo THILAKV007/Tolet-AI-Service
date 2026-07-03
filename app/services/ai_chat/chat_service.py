@@ -1,4 +1,5 @@
 import random
+import re
 import concurrent.futures
 
 from services.translation.translation_pipeline import TranslationPipeline
@@ -42,6 +43,7 @@ class ChatService:
         self.spell_corrector      = LocationSpellCorrector()
 
         # Pre-warm the geocode cache with all localities currently in the DB.
+        all_localities = []
         try:
             all_localities = self.property_service.get_all_localities()
             if all_localities:
@@ -50,6 +52,46 @@ class ChatService:
                 print(f"[ChatService] Geo cache ready. Stats: {self.geo_expander.cache_stats()}")
         except Exception as e:
             print(f"[ChatService] Geo warm_cache skipped: {e}")
+
+        # Teach DomainGuard about every real locality/city in the DB so a
+        # first-turn message naming an approved area (e.g. "Ramapuram") is
+        # never wrongly rejected as off-topic just because it's missing
+        # from DomainGuard's small hardcoded keyword shortlist.
+        self._known_locations = []
+        try:
+            all_cities = self.property_service.get_all_cities()
+            known_locations = (all_localities or []) + (all_cities or [])
+            if known_locations:
+                self.domain_guard.add_known_locations(known_locations)
+                self._known_locations = known_locations
+                print(f"[ChatService] DomainGuard learned {len(known_locations)} live DB locations.")
+        except Exception as e:
+            print(f"[ChatService] DomainGuard location warm-up skipped: {e}")
+
+    # =========================================================================
+    # Deterministic Location-Mention Check
+    # Backstop for IntentDetector's own documented rule: "If the user mentions
+    # a LOCATION or AREA explicitly → ALWAYS property_search, even if there is
+    # prior context." The LLM classifier doesn't always follow that rule
+    # reliably — when it doesn't, a message like "kk nagar pg property" gets
+    # treated as a carry-forward turn, silently reusing stale filters
+    # (e.g. a leftover tenant_type from an earlier message) that the user
+    # never mentioned this time, causing real listings to be filtered out
+    # and misreported as "no properties available".
+    # =========================================================================
+    def _mentions_known_location(self, query: str) -> bool:
+        if not query or not self._known_locations:
+            return False
+        query_lower = query.lower()
+        for loc in self._known_locations:
+            loc_clean = (loc or "").strip().lower()
+            if len(loc_clean) > 2 and loc_clean in query_lower:
+                return True
+            # Also check individual tokens for messy multi-word DB addresses
+            for tok in loc_clean.replace(",", " ").split():
+                if len(tok) > 2 and re.search(r'\b' + re.escape(tok) + r'\b', query_lower):
+                    return True
+        return False
 
     # =========================================================================
     # Location Match Validator
@@ -115,20 +157,31 @@ class ChatService:
     def _geo_expand_parallel(
         self,
         location: str,
-        all_localities: list
+        all_localities: list,
+        hard_type_filters: dict = None
     ) -> dict:
         """
         Runs two tasks in parallel:
           Task A — direct property search for the exact location
           Task B — geo expansion to find nearby localities
 
+        hard_type_filters (e.g. {"property_type": "paid_guest"}) is applied to
+        the direct search too — otherwise "does this location have listings?"
+        would say yes just because SOME other property type exists there,
+        even when the type the user actually asked for (PG/commercial/
+        residential) has zero listings — wrongly skipping geo-expansion.
+
         Returns a dict with keys:
           direct_results      : list of properties from exact-match search
           expanded_with_dist  : list of {area, distance_km} dicts
         """
+        direct_search_filters = {"location": location}
+        if hard_type_filters:
+            direct_search_filters.update(hard_type_filters)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             future_direct = pool.submit(
-                self.property_service.search, {"location": location}
+                self.property_service.search, direct_search_filters
             )
             future_geo = pool.submit(
                 self.geo_expander.expand_from_db_with_distances,
@@ -187,6 +240,19 @@ class ChatService:
             conversation_history=session_messages
         )
 
+        # Deterministic backstop: IntentDetector's own prompt says a message
+        # naming a location should ALWAYS be property_search, resetting any
+        # carried-forward filters. The LLM doesn't always apply that rule
+        # reliably — enforce it here so stale filters (e.g. a leftover
+        # "bachelor" preference) can't silently zero out a fresh, plain
+        # location search like "kk nagar pg property".
+        if intent != "property_search" and self._mentions_known_location(cleaned_query):
+            print(
+                f"[ChatService] Intent override: '{intent}' → 'property_search' "
+                f"(query names a known DB location)"
+            )
+            intent = "property_search"
+
         if intent == "property_search":
             filters_for_extraction = {}
         elif intent == "refilter":
@@ -198,6 +264,16 @@ class ChatService:
             query=cleaned_query,
             conversation_history=session_messages,
             previous_filters=filters_for_extraction
+        )
+
+        # Capture what the user actually typed/meant as the location BEFORE
+        # geo-expansion (below) can null out filters["location"] or swap it
+        # for a nearby sub-locality. This is the single source of truth for
+        # what to call the area in every message shown to the user — the
+        # main response and the owner-type summary must always agree on it.
+        originally_requested_location = (
+            filters.get("location") or
+            (filters.get("location_expand") or [None])[0]
         )
 
         prev_location        = filters_for_extraction.get("location")
@@ -242,7 +318,12 @@ class ChatService:
             all_localities = self.property_service.get_all_localities() or []
 
             # Parallel: direct search + geo expansion at the same time
-            parallel = self._geo_expand_parallel(filters["location"], all_localities)
+            parallel = self._geo_expand_parallel(
+                filters["location"],
+                all_localities,
+                hard_type_filters={"property_type": filters["property_type"]}
+                if filters.get("property_type") else None
+            )
             direct_results     = parallel["direct_results"]
             expanded_with_dist = parallel["expanded_with_dist"]
 
@@ -285,6 +366,58 @@ class ChatService:
                     f"[ChatService] Direct listings found in '{filters['location']}'"
                     " — skipping geo expand."
                 )
+
+        # =====================================================================
+        # Clarification Gate
+        # If the user gave only a thin signal (e.g. just "2bhk" or "pg") with
+        # NO location and NO budget, don't blindly dump every matching listing.
+        # ~40% of the time, ask a quick clarifying question (location, then
+        # budget) instead — like a real agent narrowing down the search.
+        # This never fires if a location is already known, the user gave a
+        # budget, or they explicitly asked to see everything/all/list.
+        # =====================================================================
+        needs_clarification = False
+        if intent in {"property_search", "refilter"}:
+            has_location = bool(filters.get("location") or filters.get("location_expand"))
+            has_budget   = bool(filters.get("max_price"))
+            has_signal   = bool(
+                filters.get("bhk") or filters.get("property_type") or
+                filters.get("furnished") or filters.get("tenant_type")
+            )
+            query_lower_check = cleaned_query.lower()
+            explicit_listing_request = any(
+                sig in query_lower_check for sig in (
+                    "list", "show all", "show me all", "all properties",
+                    "everything", "any location", "anything available"
+                )
+            )
+            if has_signal and not has_location and not has_budget and not explicit_listing_request:
+                needs_clarification = random.random() < 0.4
+
+        if needs_clarification:
+            ai_response = self.response_ai.generate_clarification(
+                query=cleaned_query,
+                filters=filters,
+                session_messages=session_messages
+            )
+            self._save_turn(
+                session_id=session_id,
+                user_query=query,
+                assistant_response=ai_response,
+                filters=filters,
+                properties=[],
+                intent="clarification"
+            )
+            return {
+                "success":          True,
+                "query":            query,
+                "intent":           "clarification",
+                "translated_query": translation_result["translated_query"],
+                "cleaned_query":    cleaned_query,
+                "filters":          filters,
+                "properties":       [],
+                "response":         ai_response,
+            }
 
         # =====================================================================
         # Property Search + Ranking
@@ -332,11 +465,13 @@ class ChatService:
                 # If geo expanded but fewer than 3 results, retry with
                 # relaxed filters (drop bhk / price / furnished constraints)
                 # so the user always sees at least 3 nearby properties when they exist.
+                # NOTE: property_type is NEVER relaxed — a PG search must never
+                # get padded with residential/commercial listings, and vice versa.
                 GEO_MIN_PROPS = 3
                 if len(ranked_properties) < GEO_MIN_PROPS:
                     relaxed_filters = {
                         k: v for k, v in filters.items()
-                        if k in ("location_expand", "_geo_dist_lookup")
+                        if k in ("location_expand", "_geo_dist_lookup", "property_type")
                     }
                     relaxed_props = self.property_service.search(relaxed_filters)
                     relaxed_props = self._filter_by_location_match(
@@ -404,11 +539,36 @@ class ChatService:
         # Owner-Type Counts — how many direct owner vs broker listings exist
         # for the searched location (ignores the owner_type filter itself so
         # totals always reflect full supply, not the already-filtered slice).
+        #
+        # If the user gave NO location (e.g. "I want commercial property"),
+        # there's no location to count against yet — but if properties WERE
+        # still found (a location-less DB search can still return matches),
+        # fall back to the locality of the first result so the summary stays
+        # truthful instead of defaulting to a stale "0 direct owner / 0
+        # broker" that contradicts the property just shown.
         # =====================================================================
-        owner_type_counts = {"direct_owner": 0, "broker": 0}
-        if intent in search_intents and (filters.get("location") or filters.get("location_expand")):
+        owner_type_counts  = {"direct_owner": 0, "broker": 0}
+        counts_location    = (
+            filters.get("location") or
+            filters.get("location_expand") or
+            originally_requested_location
+        )
+
+        if not counts_location and ranked_properties:
+            fallback_locality = (
+                ranked_properties[0].get("locality") or
+                ranked_properties[0].get("location") or
+                ranked_properties[0].get("city")
+            )
+            if fallback_locality:
+                counts_location = fallback_locality
+
+        if intent in search_intents and counts_location:
             try:
-                owner_type_counts = self.property_service.count_by_owner_type(filters)
+                count_filters = dict(filters)
+                if not filters.get("location") and not filters.get("location_expand"):
+                    count_filters["location"] = counts_location
+                owner_type_counts = self.property_service.count_by_owner_type(count_filters)
             except Exception as e:
                 print(f"[ChatService] owner_type_counts skipped: {e}")
 
@@ -433,10 +593,44 @@ class ChatService:
         )
 
         # ── Natural language summaries for frontend badges ───────────────────
+        # Only generate these for property-related intents — not greetings,
+        # off-topic, knowledge queries, etc.
+        if intent not in search_intents:
+            return {
+                "success":              True,
+                "query":                query,
+                "intent":               intent,
+                "translated_query":     translation_result["translated_query"],
+                "cleaned_query":        cleaned_query,
+                "filters":              filters,
+                "properties":           ranked_properties,
+                "response":             ai_response,
+            }
+
+        # No location context at all (no filter, no geo-expansion, no
+        # fallback from a returned property) → there's nothing real to
+        # summarize. Skip the direct-owner/broker badge instead of showing
+        # a made-up "this area has 0 listings" that contradicts the
+        # property already shown to the user.
+        if not counts_location:
+            return {
+                "success":              True,
+                "query":                query,
+                "intent":               intent,
+                "translated_query":     translation_result["translated_query"],
+                "cleaned_query":        cleaned_query,
+                "filters":              filters,
+                "properties":           ranked_properties,
+                "response":             ai_response,
+                "owner_type_counts":    owner_type_counts,
+                **( {"spell_correction": spell_correction_note} if spell_correction_note else {})
+            }
+
         area_name = (
-            filters.get("location") or
+            originally_requested_location or
             geo_original_location or
             (filters.get("location_expand") or [None])[0] or
+            counts_location or
             "this area"
         )
         d_count = owner_type_counts.get("direct_owner", 0)

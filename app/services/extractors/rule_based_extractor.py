@@ -90,27 +90,29 @@ class RuleBasedExtractor:
 
             filters["near_metro"] = True
 
-        property_types = [
+        # NOTE: property_db_service.py only isolates on property_type values
+        # "residential", "commercial", "paid_guest" — anything else is
+        # silently ignored (no type filter applied at all). Map user-facing
+        # synonyms to those exact DB values here.
+        property_type_map = {
+            "house":    "residential",
+            "apartment":"residential",
+            "flat":     "residential",
+            "villa":    "residential",
+            "studio":   "residential",
+            "pg":       "paid_guest",
+            "hostel":   "paid_guest",
+        }
 
-            "house",
-            "apartment",
-            "flat",
-            "villa",
-            "pg",
-            "studio",
-            "1rk",
-            "2rk"
-        ]
-
-        # FIX: parse 1rk/2rk as bhk=1/bhk=2 + property_type=rk
+        # FIX: parse 1rk/2rk as bhk=1/bhk=2 + property_type=residential
         rk_match = re.search(r"(\d+)\s*rk", query)
         if rk_match:
             filters["bhk"] = int(rk_match.group(1))
-            filters["property_type"] = "rk"
+            filters["property_type"] = "residential"
 
-        for property_type in property_types:
+        for keyword, property_type in property_type_map.items():
 
-            if property_type in query:
+            if keyword in query:
 
                 filters["property_type"] = (
                     property_type

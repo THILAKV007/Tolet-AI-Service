@@ -151,3 +151,17 @@
 [2026-06-24 14:15:50] Location: Ekkatuthangal | Query: can i get the property from ekkatuthangal
 [2026-06-24 14:25:43] Location: Royapuram | Query: i want property from royapuram
 [2026-06-24 14:27:15] Location: Purasaiwakkam | Query: okay, can i get the property from purasaivakkam
+[2026-06-30 18:42:47] Location: Ambattur | Query: can u give me any broker property on this same location
+[2026-07-03 06:34:00] Location: Velachery, Ambattur, Anna Nagar... | Query: chennai
+[2026-07-03 06:38:34] Location: Annamalai Nagar, Ashok Nagar, Ashok Pillar... | Query: please give me T Nagar
+[2026-07-03 06:47:20] Location: Velachery, Ambattur, Anna Nagar... | Query: i want pg on chennai
+[2026-07-03 06:53:30] Location: Ambattur | Query: 2bhk in ambattur chennai
+[2026-07-03 06:54:39] Location: Periyar Salai Ramapuram | Query: i want property from periyar salai ramapuram
+[2026-07-03 06:57:58] Location: Ramapuram | Query: commercial RAMAPURAM, CHENNAI, TAMILNADU
+[2026-07-03 07:45:17] Location: Kk Nagar | Query: kk nagar pg property
+[2026-07-03 07:49:20] Location: Kk Nagar | Query: i want pg on kk nagar
+[2026-07-03 09:53:29] Location: Kk Nagar | Query: i'm college student i want property to stay on kk nagar
+[2026-07-03 09:54:57] Location: Kk Nagar | Query: can i get the pg on kk nagar
+[2026-07-03 09:59:09] Location: Annamalai Nagar | Query: i want pg from annamalai nagar
+[2026-07-03 10:05:28] Location: Chennai, Velachery, Ambattur... | Query: from any location is okay but chennai is better for me
+[2026-07-03 10:24:50] Location: Chennai | Query: i meant for commercial property is there in chennai
