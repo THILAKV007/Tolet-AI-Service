@@ -266,6 +266,47 @@ class ChatService:
             previous_filters=filters_for_extraction
         )
 
+        # =====================================================================
+        # Fresh-search filter sanitizer
+        # For "property_search" intent, filters_for_extraction was already
+        # reset to {} above — so programmatically nothing should carry
+        # forward. BUT the extractor is still handed the raw conversation
+        # HISTORY TEXT (for tone/language context), and the LLM can re-surface
+        # ANY filter it saw mentioned several turns ago — bachelor/family,
+        # direct-owner/broker, near-metro, furnished, bhk, budget — even
+        # though the CURRENT message never asked for it and previous_filters
+        # was empty. Confirmed live: tenant_type+owner_type leaked on one
+        # query, near_metro leaked on the next — same root cause, different
+        # field each time. So this checks EVERY filter field generically
+        # rather than allowlisting field-by-field as they turn up.
+        # =====================================================================
+        if intent == "property_search":
+            q_lower_sanitize = cleaned_query.lower()
+
+            field_keywords = {
+                "tenant_type": ("bachelor", "family"),
+                "owner_type":  ("direct owner", "no broker", "without broker", "owner only", "broker"),
+                "near_metro":  ("metro",),
+                "furnished":   ("furnished",),
+            }
+            for field, keywords in field_keywords.items():
+                if filters.get(field) and not any(kw in q_lower_sanitize for kw in keywords):
+                    print(
+                        f"[ChatService] Dropping stale {field} '{filters[field]}' "
+                        f"— not mentioned in this message."
+                    )
+                    filters[field] = None if field != "near_metro" else False
+
+            # bhk and max_price are numeric — the current message should
+            # contain at least one digit for either to be legitimate this turn.
+            has_digit = bool(re.search(r"\d", q_lower_sanitize))
+            if filters.get("bhk") and not has_digit:
+                print(f"[ChatService] Dropping stale bhk '{filters['bhk']}' — no number in this message.")
+                filters["bhk"] = None
+            if filters.get("max_price") and not has_digit:
+                print(f"[ChatService] Dropping stale max_price '{filters['max_price']}' — no number in this message.")
+                filters["max_price"] = None
+
         # Capture what the user actually typed/meant as the location BEFORE
         # geo-expansion (below) can null out filters["location"] or swap it
         # for a nearby sub-locality. This is the single source of truth for
@@ -289,7 +330,20 @@ class ChatService:
         spell_correction_note = None  # surfaced to AI if correction was made
         if filters.get("location") and not filters.get("location_expand"):
             try:
-                all_localities_for_spell = self.property_service.get_all_localities() or []
+                # FIX: include known CITIES alongside localities in the spell-
+                # correction corpus. Previously only localities (e.g. "Anna
+                # Nagar", "Velachery") were passed in, so a correctly-typed
+                # CITY like "Chennai" never matched anything in Pass 1 (exact
+                # match) and fell through to Pass 2/3 fuzzy matching, which
+                # risked silently rewriting it to an unrelated locality before
+                # the search ever ran — while the reply text still showed the
+                # original, correct city name (since that's captured earlier),
+                # masking the mismatch. Including cities lets "Chennai" hit
+                # the exact-match pass and never enter fuzzy matching at all.
+                all_localities_for_spell = (
+                    (self.property_service.get_all_localities() or []) +
+                    (self.property_service.get_all_cities() or [])
+                )
                 corrected_loc, was_corrected, original_loc = self._correct_location_spelling(
                     filters["location"], all_localities_for_spell
                 )
@@ -502,19 +556,14 @@ class ChatService:
                 if len(all_ranked) > 0:
                     max_show = min(NORMAL_MAX_PROPS, len(all_ranked))
 
-                    # If user explicitly asks to list/see more options, show
-                    # the full max instead of a random 1-to-max count.
-                    listing_signals = {
-                        "list", "show", "other", "more", "all",
-                        "any other", "else", "different", "options"
-                    }
-                    query_lower   = cleaned_query.lower()
-                    wants_listing = any(sig in query_lower for sig in listing_signals)
-
-                    if wants_listing or intent == "refilter":
-                        count = max_show
-                    else:
-                        count = random.randint(1, max_show)
+                    # FIX: always show up to NORMAL_MAX_PROPS (3) when that many
+                    # matches exist. Previously this picked a RANDOM count between
+                    # 1 and max_show for plain searches, so a user with 6 matching
+                    # properties could be shown just 1 — looking like there was
+                    # barely any inventory when there wasn't. Listing-intent
+                    # queries ("show", "list", "all", etc.) and refilters already
+                    # got the full max_show; now every search does.
+                    count = max_show
 
                     ranked_properties = all_ranked[:count]
                 else:
@@ -548,6 +597,7 @@ class ChatService:
         # broker" that contradicts the property just shown.
         # =====================================================================
         owner_type_counts  = {"direct_owner": 0, "broker": 0}
+        is_multi_location_summary = False  # true = counts below are a real cross-location aggregate
         counts_location    = (
             filters.get("location") or
             filters.get("location_expand") or
@@ -555,15 +605,50 @@ class ChatService:
         )
 
         if not counts_location and ranked_properties:
-            fallback_locality = (
-                ranked_properties[0].get("locality") or
-                ranked_properties[0].get("location") or
-                ranked_properties[0].get("city")
-            )
-            if fallback_locality:
-                counts_location = fallback_locality
+            # Only fall back to "the first result's locality" when EVERY
+            # matched property actually shares that same locality — a
+            # genuine "any location" search can legitimately return results
+            # spanning several different cities (e.g. PG listings in
+            # Annamalai Nagar, Coimbatore, AND Chennai), and naming just the
+            # first result's area would misreport a partial count as if it
+            # were the total.
+            distinct_localities = {
+                (p.get("locality") or p.get("location") or p.get("city") or "").strip().lower()
+                for p in ranked_properties
+            }
+            distinct_localities.discard("")
+            if len(distinct_localities) == 1:
+                fallback_locality = (
+                    ranked_properties[0].get("locality") or
+                    ranked_properties[0].get("location") or
+                    ranked_properties[0].get("city")
+                )
+                if fallback_locality:
+                    counts_location = fallback_locality
+            elif len(distinct_localities) > 1:
+                # Results genuinely span multiple areas with no location
+                # filter — compute a real aggregate directly from the FULL
+                # matched set ('properties', before ranking/display
+                # truncation) rather than scoping to any single area, so the
+                # count reflects true total supply matching this search
+                # (property_type, etc.) across every location, not just the
+                # locations of the properties shown on screen.
+                for prop in properties:
+                    posted_by = (prop.get("posted_by") or "").strip().lower()
+                    if re.match(r"^direct[_\s]?owner$", posted_by):
+                        owner_type_counts["direct_owner"] += 1
+                    elif posted_by.startswith("broker"):
+                        owner_type_counts["broker"] += 1
+                is_multi_location_summary = True
+                counts_location = "multiple locations"  # truthy sentinel — skips the DB re-query below
+                print(
+                    f"[ChatService] Multi-location aggregate — "
+                    f"direct_owner={owner_type_counts['direct_owner']}, "
+                    f"broker={owner_type_counts['broker']} "
+                    f"across {len(properties)} matched properties in {len(distinct_localities)} areas."
+                )
 
-        if intent in search_intents and counts_location:
+        if intent in search_intents and counts_location and not is_multi_location_summary:
             try:
                 count_filters = dict(filters)
                 if not filters.get("location") and not filters.get("location_expand"):
@@ -627,11 +712,13 @@ class ChatService:
             }
 
         area_name = (
-            originally_requested_location or
-            geo_original_location or
-            (filters.get("location_expand") or [None])[0] or
-            counts_location or
-            "this area"
+            "multiple locations" if is_multi_location_summary else (
+                originally_requested_location or
+                geo_original_location or
+                (filters.get("location_expand") or [None])[0] or
+                counts_location or
+                "this area"
+            )
         )
         d_count = owner_type_counts.get("direct_owner", 0)
         b_count = owner_type_counts.get("broker", 0)

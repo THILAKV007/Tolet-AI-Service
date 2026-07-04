@@ -169,8 +169,34 @@ Extract the rental filters as JSON.
         if extracted.get("owner_type") in ("owner", "broker"):
             clean["owner_type"] = extracted["owner_type"]
 
-        if extracted.get("property_type") in ("residential", "commercial", "paid_guest"):
-            clean["property_type"] = extracted["property_type"]
+        # FIX: property_db_service.py only isolates on the exact strings
+        # "residential" / "commercial" / "paid_guest" — the old check here
+        # required an EXACT match against that tuple, so if the LLM ever
+        # returned something semantically correct but not byte-identical
+        # (e.g. "PG", "Paid Guest", "paid guest", trailing whitespace,
+        # different case), the whole property_type filter silently vanished
+        # with no log line, no error, nothing — just a filter that quietly
+        # stopped applying. Normalize first, then map common synonyms, and
+        # log the rare case where nothing recognizable came back at all.
+        raw_property_type = extracted.get("property_type")
+        if isinstance(raw_property_type, str):
+            normalized_type = raw_property_type.strip().lower().replace(" ", "_")
+            property_type_synonyms = {
+                "residential":  "residential",
+                "commercial":   "commercial",
+                "paid_guest":   "paid_guest",
+                "pg":           "paid_guest",
+                "paying_guest": "paid_guest",
+                "hostel":       "paid_guest",
+            }
+            mapped_type = property_type_synonyms.get(normalized_type)
+            if mapped_type:
+                clean["property_type"] = mapped_type
+            elif normalized_type:
+                print(
+                    f"[HybridExtractor] Unrecognized property_type from LLM: "
+                    f"'{raw_property_type}' — filter not applied."
+                )
 
         location_just_set = clean["location"] is not None
         expand_just_set   = clean["location_expand"] is not None
