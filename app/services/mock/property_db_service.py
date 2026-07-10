@@ -175,7 +175,10 @@ class PropertyDBService:
 
         owner_type = filters.get("owner_type")
         if owner_type == "owner":
-            query["type"] = {"$regex": "^direct[_\s]?owner$", "$options": "i"}
+            # DB stores this as either "direct owner"/"direct_owner" OR just
+            # plain "owner" — match both, consistent with the normalization
+            # already used in history_builder.py's display logic.
+            query["type"] = {"$regex": "^(direct[_\s]?owner|owner)$", "$options": "i"}
         elif owner_type == "broker":
             query["type"]   = {"$regex": "^broker", "$options": "i"}
             query["status"] = {"$regex": "^approved$", "$options": "i"}
@@ -352,7 +355,7 @@ class PropertyDBService:
 
             # Direct owner count
             owner_query = dict(base_query)
-            owner_query["type"] = {"$regex": "^direct[_\\s]?owner$", "$options": "i"}
+            owner_query["type"] = {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}
             direct_count = self.collection.count_documents(owner_query)
 
             # Broker count

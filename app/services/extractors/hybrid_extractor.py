@@ -36,11 +36,13 @@ PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
   when they ask to "stay" generically or mention pg/hostel).
 - NEVER mix categories. A commercial request must never carry residential or
   paid_guest signals, and vice versa.
-- If the message has NO type signal at all and no property_type was set in a
-  previous turn, return property_type: null — do not guess "residential" by
-  default. Only infer residential when there IS a positive residential signal
-  (bhk, flat, apartment, house, family, villa), OR carry forward a type already
-  established earlier in the conversation if the topic hasn't changed.
+- DEFAULT TO RESIDENTIAL: Most users on this platform are searching for a
+  home to live in. If the message has NO type signal at all (no shop/office/
+  commercial signal, no pg/hostel signal) and no property_type was set in a
+  previous turn, return property_type: "residential" — do NOT return null.
+  Only return "commercial" or "paid_guest" when the user gives an actual
+  positive signal for one of those (see rules above). Carry forward a type
+  already established earlier in the conversation if the topic hasn't changed.
 - If the user explicitly switches type mid-conversation (e.g. "actually I need
   a shop instead") — override to the new type immediately.
 
@@ -71,8 +73,19 @@ GENERAL RULES:
 - If user says "near metro" → near_metro: true
 - If user says "bachelors" / "bachelor friendly" → tenant_type: "bachelor"
 - If user says "family" → tenant_type: "family"
-- If user says "direct owner", "no broker", "without broker", "owner only" → owner_type: "owner"
-- If user says "broker", "through broker", "broker properties", "agent listings" → owner_type: "broker"
+- OWNER_TYPE — READ INTENT, NOT JUST FIXED PHRASES:
+  Set owner_type: "owner" whenever the user's message means they want to deal
+  with the property owner directly, with no middleman — however they phrase
+  it. This includes (but is not limited to): "direct owner", "no broker",
+  "without broker", "owner only", "straight owner", "straight from owner",
+  "one to one", "one-on-one", "no agent", "without agent", "no middleman",
+  "skip the broker", "no commission", "zero brokerage", "brokerage free",
+  "talk to the owner directly", "owner directly", "non-broker". Recognize
+  the INTENT (owner-direct, zero-commission, no-intermediary) even if the
+  exact wording is new or unusual — do not require an exact phrase match.
+  Set owner_type: "broker" whenever the user's message means they're fine
+  with or specifically want a broker/agent involved: "broker", "through
+  broker", "broker properties", "agent listings", "with agent", "brokered".
 - Understand Indian price expressions: "10k" = 10000, "15k" = 15000, "1 lakh" = 100000
 - Understand BHK expressions: "2 bedroom" = 2, "single room" = 1, "studio" = 1, "3 room" = 3
 - NEVER carry forward filters the user did not ask for in an open search
@@ -208,6 +221,14 @@ Extract the rental filters as JSON.
                 if key == "location_expand" and location_just_set:
                     continue
                 clean[key] = prev[key]
+
+        # HARD DEFAULT: never let property_type sit at null. If neither this
+        # message nor prior context established a type, assume "residential"
+        # in code (not just via the LLM prompt) — most users on this platform
+        # are searching for a home to live in, and commercial/paid_guest
+        # listings must only ever surface on an explicit signal for them.
+        if clean["property_type"] is None:
+            clean["property_type"] = "residential"
 
         return clean
 

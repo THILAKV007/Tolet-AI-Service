@@ -30,6 +30,16 @@ real_estate_advice  — general rental knowledge (agreements, rights, tips, area
 off_topic           — genuinely unrelated to rental properties in India
 
 RULES:
+- IMPORTANT DISAMBIGUATION: "direct owner", "no broker", "without broker",
+  "owner only", "straight owner", "one to one", "no middleman" etc. are a
+  SEARCH PREFERENCE (the user wants listings posted by owners, not brokers)
+  → this is property_search (or refilter if there's prior search context),
+  NEVER contact_request. Only classify as contact_request when the user is
+  asking for a SPECIFIC property's contact details that were already shown —
+  phrases like "owner's number", "phone number", "call the owner", "contact
+  him/her", "can I visit", "schedule a visit" — AND there is prior
+  conversation context with properties already shown. A message like "direct
+  owner" with no prior properties in context can never be contact_request.
 - If the user mentions a LOCATION or AREA explicitly (e.g. "from kk nagar", "in velachery", "anna nagar property") → ALWAYS property_search, even if there is prior context.
 - If the user mentions "want property", "need flat", "looking for", "find me", "show me properties" → ALWAYS property_search.
 - If the user has prior conversation context (properties were shown), short vague messages like "others", "more", "next", "list them", "show more" = property_discussion

@@ -253,6 +253,20 @@ class ChatService:
             )
             intent = "property_search"
 
+        # Deterministic backstop: "contact_request" only makes sense when
+        # there's an actual property in context to request contact info FOR.
+        # A phrase like "direct owner" can be misread by the LLM as wanting
+        # the owner's contact details, when it's really a search preference
+        # (owner-posted, no broker). If there's nothing in current_props to
+        # contact, this can never be a genuine contact request — treat it as
+        # a fresh search instead so it isn't dropped on the floor.
+        if intent == "contact_request" and not current_props:
+            print(
+                f"[ChatService] Intent override: 'contact_request' → 'property_search' "
+                f"(no properties in context to contact)"
+            )
+            intent = "property_search"
+
         if intent == "property_search":
             filters_for_extraction = {}
         elif intent == "refilter":
@@ -285,7 +299,15 @@ class ChatService:
 
             field_keywords = {
                 "tenant_type": ("bachelor", "family"),
-                "owner_type":  ("direct owner", "no broker", "without broker", "owner only", "broker"),
+                "owner_type":  (
+                    "direct owner", "no broker", "without broker", "owner only",
+                    "broker", "straight owner", "straight from owner", "one to one",
+                    "one-on-one", "no agent", "without agent", "no middleman",
+                    "no middle man", "skip the broker", "no commission",
+                    "zero brokerage", "brokerage free", "owner directly",
+                    "directly from owner", "talk to the owner", "non-broker",
+                    "with agent", "brokered", "agent listing",
+                ),
                 "near_metro":  ("metro",),
                 "furnished":   ("furnished",),
             }
@@ -434,8 +456,14 @@ class ChatService:
         if intent in {"property_search", "refilter"}:
             has_location = bool(filters.get("location") or filters.get("location_expand"))
             has_budget   = bool(filters.get("max_price"))
+            # NOTE: property_type now defaults to "residential" even when the
+            # user gave no type signal at all (see hybrid_extractor.py), so it
+            # can no longer be used as a proxy for "the user said something
+            # specific". Only count it here when it's an explicit non-default
+            # signal (commercial / paid_guest) that the user actually stated.
             has_signal   = bool(
-                filters.get("bhk") or filters.get("property_type") or
+                filters.get("bhk") or
+                filters.get("property_type") in ("commercial", "paid_guest") or
                 filters.get("furnished") or filters.get("tenant_type")
             )
             query_lower_check = cleaned_query.lower()
@@ -635,7 +663,7 @@ class ChatService:
                 # locations of the properties shown on screen.
                 for prop in properties:
                     posted_by = (prop.get("posted_by") or "").strip().lower()
-                    if re.match(r"^direct[_\s]?owner$", posted_by):
+                    if re.match(r"^(direct[_\s]?owner|owner)$", posted_by):
                         owner_type_counts["direct_owner"] += 1
                     elif posted_by.startswith("broker"):
                         owner_type_counts["broker"] += 1
