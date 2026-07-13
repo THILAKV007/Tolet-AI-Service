@@ -34,6 +34,41 @@ class PropertyDBService:
             self.collection = None
 
     # =========================================================================
+    # Shared location-query builder
+    # FIX: this logic previously existed as 3 separate copies (_search_single,
+    # _search_expanded, count_by_owner_type), and had already drifted out of
+    # sync — the expanded-search copy was missing the "address" field the
+    # other two checked. One shared helper means a fix here fixes all callers.
+    # =========================================================================
+    def _location_or_conditions(self, raw_location: str) -> list:
+        loc = raw_location.strip()
+        loc_norm    = re.sub(r"\.+", "", loc)              # remove dots (K.K. Nagar → KK Nagar)
+        loc_norm    = re.sub(r"\s+", " ", loc_norm).strip()  # collapse spaces
+        loc_nospace = re.sub(r"\s+", "", loc_norm)          # "KK Nagar" → "KKNagar"
+
+        patterns = {loc, loc_norm, loc_nospace}
+        or_conditions = []
+        for p in patterns:
+            if p:
+                pat = re.compile(re.escape(p), re.IGNORECASE)
+                or_conditions += [
+                    {"locality": pat},
+                    {"city":     pat},
+                    {"state":    pat},
+                    {"address":  pat},
+                ]
+        return or_conditions
+
+    def _build_location_query(self, location: str) -> dict:
+        return {"$or": self._location_or_conditions(location)}
+
+    def _build_expanded_location_query(self, areas: list) -> dict:
+        or_conditions = []
+        for area in areas:
+            or_conditions += self._location_or_conditions(area.strip())
+        return {"$or": or_conditions}
+
+    # =========================================================================
     # Main Search
     # =========================================================================
     def search(self, filters: dict) -> list:
@@ -65,21 +100,13 @@ class PropertyDBService:
         try:
             seen    = set()
             results = []
+            per_area_limit = filters.get("limit_per_area", 5)
 
             for area in areas:
-                safe_area = re.escape(area.strip())
-                pattern   = re.compile(safe_area, re.IGNORECASE)
-
-                query = {
-                    "$or": [
-                        {"locality": pattern},
-                        {"city":     pattern},
-                        {"state":    pattern},
-                    ]
-                }
+                query = self._build_location_query(area)
                 query = self._apply_common_filters(query, filters)
 
-                rows = list(self.collection.find(query).sort("createdAt", -1).limit(5))
+                rows = list(self.collection.find(query).sort("createdAt", -1).limit(per_area_limit))
                 for row in rows:
                     key = str(row["_id"])
                     if key not in seen:
@@ -105,31 +132,13 @@ class PropertyDBService:
             query = {}
 
             if filters.get("location"):
-                loc = filters["location"].strip()
-                # Normalize: collapse multiple spaces, remove dots (K.K. Nagar → KK Nagar)
-                loc_norm = re.sub(r"\.+", "", loc)          # remove dots
-                loc_norm = re.sub(r"\s+", " ", loc_norm).strip()  # collapse spaces
-                # Also build a no-space variant for "KK Nagar" matching "kk nagar"
-                loc_nospace = re.sub(r"\s+", "", loc_norm)  # "KKNagar"
-
-                # Build OR patterns: original, normalized, and space-collapsed
-                patterns = {loc, loc_norm, loc_nospace}
-                or_conditions = []
-                for p in patterns:
-                    if p:
-                        pat = re.compile(re.escape(p), re.IGNORECASE)
-                        or_conditions += [
-                            {"locality": pat},
-                            {"city":     pat},
-                            {"state":    pat},
-                            {"address":  pat},
-                        ]
-                query["$or"] = or_conditions
+                query.update(self._build_location_query(filters["location"]))
 
             query = self._apply_common_filters(query, filters)
+            limit = filters.get("limit", 20)
 
             print(f"[PropertyDBService] Mongo query: {query}")
-            rows = list(self.collection.find(query).sort("createdAt", -1).limit(20))
+            rows = list(self.collection.find(query).sort("createdAt", -1).limit(limit))
             results = [self._serialize(row) for row in rows]
             print(f"[PropertyDBService] _search_single '{filters.get('location')}' → {len(results)} results")
             return results
@@ -178,10 +187,23 @@ class PropertyDBService:
             # DB stores this as either "direct owner"/"direct_owner" OR just
             # plain "owner" — match both, consistent with the normalization
             # already used in history_builder.py's display logic.
-            query["type"] = {"$regex": "^(direct[_\s]?owner|owner)$", "$options": "i"}
+            # FALLBACK: some documents may have "type" missing/blank while
+            # still carrying a valid isBrokerExcuse=True boolean (this was
+            # true of the local seed data before it was fixed to match
+            # production schema) — treat that as a direct-owner signal too,
+            # so a document doesn't become invisible to owner-type search
+            # just because one of the two redundant fields wasn't set.
+            query["$and"] = query.get("$and", []) + [{
+                "$or": [
+                    {"type": {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}},
+                    {"$and": [
+                        {"$or": [{"type": {"$exists": False}}, {"type": ""}]},
+                        {"isBrokerExcuse": True},
+                    ]},
+                ]
+            }]
         elif owner_type == "broker":
-            query["type"]   = {"$regex": "^broker", "$options": "i"}
-            query["status"] = {"$regex": "^approved$", "$options": "i"}
+            query["type"] = {"$regex": "^broker", "$options": "i"}
 
         # ── Property type isolation ──────────────────────────────────────────
         # DB stores propertyType as "residential", "commercial", or "paid_guest".
@@ -315,35 +337,12 @@ class PropertyDBService:
             return {"direct_owner": 0, "broker": 0}
 
         try:
-            # Build base location query (same as _search_single / _search_expanded)
+            # Build base location query (same helper as search())
             location_expand = filters.get("location_expand")
             if location_expand and isinstance(location_expand, list) and location_expand:
-                location_query = {"$or": []}
-                for area in location_expand:
-                    safe_area = re.escape(area.strip())
-                    pattern   = re.compile(safe_area, re.IGNORECASE)
-                    location_query["$or"] += [
-                        {"locality": pattern},
-                        {"city":     pattern},
-                        {"state":    pattern},
-                    ]
+                location_query = self._build_expanded_location_query(location_expand)
             elif filters.get("location"):
-                loc = filters["location"].strip()
-                loc_norm    = re.sub(r"\.+", "", loc)
-                loc_norm    = re.sub(r"\s+", " ", loc_norm).strip()
-                loc_nospace = re.sub(r"\s+", "", loc_norm)
-                patterns    = {loc, loc_norm, loc_nospace}
-                or_conditions = []
-                for p in patterns:
-                    if p:
-                        pat = re.compile(re.escape(p), re.IGNORECASE)
-                        or_conditions += [
-                            {"locality": pat},
-                            {"city":     pat},
-                            {"state":    pat},
-                            {"address":  pat},
-                        ]
-                location_query = {"$or": or_conditions}
+                location_query = self._build_location_query(filters["location"])
             else:
                 return {"direct_owner": 0, "broker": 0}
 
@@ -353,9 +352,16 @@ class PropertyDBService:
             base_query = dict(location_query)
             base_query = self._apply_common_filters(base_query, count_filters)
 
-            # Direct owner count
+            # Direct owner count (same fallback logic as _apply_common_filters,
+            # kept in sync so counts and actual search results never disagree)
             owner_query = dict(base_query)
-            owner_query["type"] = {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}
+            owner_query["$or"] = [
+                {"type": {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}},
+                {"$and": [
+                    {"$or": [{"type": {"$exists": False}}, {"type": ""}]},
+                    {"isBrokerExcuse": True},
+                ]},
+            ]
             direct_count = self.collection.count_documents(owner_query)
 
             # Broker count

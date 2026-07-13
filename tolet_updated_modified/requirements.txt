@@ -1,0 +1,38 @@
+# Web framework / server (app/main.py, app/routes/chat_routes.py)
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+
+# Database
+pymongo>=4.6.0
+
+# LLM client (app/services/llm/llm_client.py, extractors/llm_extractor.py)
+openai>=1.14.0
+
+# Geocoding for radius-based location expansion (app/services/geo/geo_expander.py)
+geopy>=2.4.1
+
+# HTTP client (translation service, run.py)
+requests>=2.31.0
+
+# .env config loading (app/services/session/session_store.py, fix_images.py, etc.)
+python-dotenv>=1.0.1
+
+# Postgres access (fix_images.py)
+psycopg2-binary>=2.9.9
+
+# Streamlit demo/admin UI (streamlit_app.py)
+streamlit>=1.32.0
+
+# --- Optional but recommended (code has graceful fallbacks if missing) ---
+
+# Faster/more accurate fuzzy matching in spell_corrector.py;
+# falls back to stdlib difflib if not installed.
+rapidfuzz>=3.6.1
+
+# Session storage backend in session_store.py;
+# falls back to in-memory/no-op if not installed.
+redis>=5.0.1
+
+# --- Testing ---
+pytest>=8.0.0
