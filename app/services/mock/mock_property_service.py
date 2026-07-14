@@ -153,6 +153,22 @@ class MockPropertyService:
 
             if (
 
+                filters.get("min_price")
+
+                and
+
+                property_item["price"]
+
+                <
+
+                filters["min_price"]
+            ):
+
+                continue
+
+
+            if (
+
                 filters.get("location")
 
                 and

@@ -158,7 +158,9 @@ class ChatService:
         self,
         location: str,
         all_localities: list,
-        hard_type_filters: dict = None
+        hard_type_filters: dict = None,
+        city_hint: str = None,
+        state_hint: str = None,
     ) -> dict:
         """
         Runs two tasks in parallel:
@@ -170,6 +172,15 @@ class ChatService:
         would say yes just because SOME other property type exists there,
         even when the type the user actually asked for (PG/commercial/
         residential) has zero listings — wrongly skipping geo-expansion.
+
+        city_hint/state_hint: the REAL city/state `location` belongs to
+        (looked up from the DB by the caller). FIX: this used to be omitted
+        entirely, which silently disabled GeoExpander's own same-city filter
+        and sanity-radius check (both are no-ops without a city context —
+        see geo_expander.py's _validate()) — so a search could "expand" a
+        city like Mumbai to include a locality from a totally different,
+        1000+ km away city that happened to geocode oddly. Always pass these
+        through so that safety net is actually active.
 
         Returns a dict with keys:
           direct_results      : list of properties from exact-match search
@@ -185,7 +196,8 @@ class ChatService:
             )
             future_geo = pool.submit(
                 self.geo_expander.expand_from_db_with_distances,
-                location, all_localities
+                location, all_localities,
+                city_hint=city_hint, state_hint=state_hint,
             )
             direct_results     = future_direct.result()
             expanded_with_dist = future_geo.result()
@@ -319,12 +331,16 @@ class ChatService:
                     )
                     filters[field] = None if field != "near_metro" else False
 
-            # bhk and max_price are numeric — the current message should
-            # contain at least one digit for either to be legitimate this turn.
+            # bhk, min_price, and max_price are numeric — the current message
+            # should contain at least one digit for any of them to be
+            # legitimate this turn.
             has_digit = bool(re.search(r"\d", q_lower_sanitize))
             if filters.get("bhk") and not has_digit:
                 print(f"[ChatService] Dropping stale bhk '{filters['bhk']}' — no number in this message.")
                 filters["bhk"] = None
+            if filters.get("min_price") and not has_digit:
+                print(f"[ChatService] Dropping stale min_price '{filters['min_price']}' — no number in this message.")
+                filters["min_price"] = None
             if filters.get("max_price") and not has_digit:
                 print(f"[ChatService] Dropping stale max_price '{filters['max_price']}' — no number in this message.")
                 filters["max_price"] = None
@@ -391,14 +407,39 @@ class ChatService:
             and filters.get("location")
             and not filters.get("location_expand")
         ):
-            all_localities = self.property_service.get_all_localities() or []
+            # FIX: resolve the REAL city/state this location belongs to
+            # (from an actual matching DB record) before expanding. Passing
+            # this through is what lets GeoExpander's own same-city filter
+            # and sanity-radius check actually engage — without it, expansion
+            # ran nationwide with no safety net (see _geo_expand_parallel's
+            # docstring). If we can't resolve a city at all, we deliberately
+            # skip expansion rather than guess blindly across every city in
+            # the DB.
+            city_hint, state_hint = self.property_service.get_city_state_for_location(
+                filters["location"]
+            )
+            all_localities_full = self.property_service.get_all_localities_with_city() or []
+            if city_hint:
+                all_localities = [
+                    entry for entry in all_localities_full
+                    if entry.get("city", "").lower() == city_hint.lower()
+                ]
+            else:
+                print(
+                    f"[ChatService] Could not resolve a city for "
+                    f"'{filters['location']}' — skipping geo expansion rather "
+                    f"than guessing across every city in the DB."
+                )
+                all_localities = []
 
             # Parallel: direct search + geo expansion at the same time
             parallel = self._geo_expand_parallel(
                 filters["location"],
                 all_localities,
                 hard_type_filters={"property_type": filters["property_type"]}
-                if filters.get("property_type") else None
+                if filters.get("property_type") else None,
+                city_hint=city_hint,
+                state_hint=state_hint,
             )
             direct_results     = parallel["direct_results"]
             expanded_with_dist = parallel["expanded_with_dist"]
@@ -422,9 +463,13 @@ class ChatService:
                     }
                     filters["_geo_dist_lookup"] = dist_lookup
 
+                    # NOTE: distance_km is kept in dist_lookup above (used
+                    # internally by RankingEngine to sort nearest-first) but
+                    # deliberately left OUT of geo_expanded_areas — this list
+                    # feeds into the text the LLM sees, and area names should
+                    # reach it plain, with no km figure attached.
                     geo_expanded_areas = [
-                        f"{entry['area']} ({entry['distance_km']} km away)"
-                        for entry in nearby_areas
+                        entry["area"] for entry in nearby_areas
                     ]
                     filters["location_expand"] = [entry["area"] for entry in nearby_areas]
                     filters["location"]        = None
@@ -455,7 +500,7 @@ class ChatService:
         needs_clarification = False
         if intent in {"property_search", "refilter"}:
             has_location = bool(filters.get("location") or filters.get("location_expand"))
-            has_budget   = bool(filters.get("max_price"))
+            has_budget   = bool(filters.get("max_price") or filters.get("min_price"))
             # NOTE: property_type now defaults to "residential" even when the
             # user gave no type signal at all (see hybrid_extractor.py), so it
             # can no longer be used as a proxy for "the user said something
@@ -739,15 +784,28 @@ class ChatService:
                 **( {"spell_correction": spell_correction_note} if spell_correction_note else {})
             }
 
-        area_name = (
-            "multiple locations" if is_multi_location_summary else (
+        # FIX: previously this always preferred `originally_requested_location`
+        # (e.g. "Kk Nagar"), even when geo-expansion had already kicked in
+        # because Kk Nagar itself had zero direct matches. In that case the
+        # counts below come from count_by_owner_type() scoped to the
+        # EXPANDED nearby-area list (filters["location_expand"]), not from
+        # Kk Nagar — so labeling the card "Kk Nagar" misrepresented where the
+        # numbers actually came from (e.g. "14 direct owner properties in Kk
+        # Nagar" when those 14 were really spread across Park Street,
+        # Ramapuram, T.Nagar, etc.). When geo-expansion happened, be explicit
+        # that the count is for the nearby areas, not the original search term.
+        if is_multi_location_summary:
+            area_name = "multiple locations"
+        elif is_geo_expanded and originally_requested_location:
+            area_name = f"areas near {originally_requested_location}"
+        else:
+            area_name = (
                 originally_requested_location or
                 geo_original_location or
                 (filters.get("location_expand") or [None])[0] or
                 counts_location or
                 "this area"
             )
-        )
         d_count = owner_type_counts.get("direct_owner", 0)
         b_count = owner_type_counts.get("broker", 0)
 

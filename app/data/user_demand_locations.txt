@@ -170,3 +170,5 @@
 [2026-07-04 07:19:39] Location: Ramapuram | Query: i want commercial property on ramapuram
 [2026-07-12 11:31:16] Location: Bnagarpet | Query: i want 3bhk
 [2026-07-12 11:49:45] Location: Ambattur | Query: can u give me on ambattur
+[2026-07-14 00:17:58] Location: Kk Nagar | Query: can i get below 500 sqr ft
+[2026-07-14 00:48:46] Location: Chennai... | Query: my sister budget is between 5k to 10k

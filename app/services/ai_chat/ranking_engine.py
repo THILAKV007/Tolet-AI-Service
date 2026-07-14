@@ -93,6 +93,35 @@ class RankingEngine:
 
                     score -= 20
 
+            # min_price is the other end of the same budget range — a
+            # property cheaper than the user's stated minimum is just as
+            # much a mismatch as one above their max (e.g. someone with a
+            # ₹5,000–₹10,000 PG budget likely wants that price band, not
+            # the cheapest possible option), so score it symmetrically.
+            if (
+
+                filters.get("min_price")
+
+                and
+
+                property_item.get("price")
+            ):
+
+                if (
+
+                    property_item["price"]
+
+                    >=
+
+                    filters["min_price"]
+                ):
+
+                    score += 25
+
+                else:
+
+                    score -= 20
+
             # ===================================
             # Furnished Score
             # ===================================

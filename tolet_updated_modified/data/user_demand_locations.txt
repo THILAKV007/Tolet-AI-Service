@@ -1,6 +1,0 @@
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: i want properties on bangalore
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: list the properties on Noida
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: please list properties from tamil nadu
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: show furnished apartments
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: 2bhk in Avadi under 20k
-[2026-06-03 05:43:34] Location: Whitefield, Koramangala... | Query: bachelor friendly flat near metro

@@ -214,20 +214,25 @@ class HistoryBuilder:
             properties_found_flag = "YES" if properties else "NO"
 
             if geo_expanded_areas:
+                # NOTE: geo_expanded_areas / dist_lookup still carry
+                # distance_km internally — GeoExpander and RankingEngine
+                # keep using it to sort areas/properties nearest-first, that
+                # part is unaffected. What changed is that the km figure is
+                # no longer written into the text handed to the LLM, so it
+                # can't surface a distance number in the reply — areas are
+                # named plainly instead.
                 if isinstance(geo_expanded_areas[0], dict):
                     nearby_str = ", ".join(
-                        f"{r['area']} ({r['distance_km']} km)"
-                        for r in geo_expanded_areas
+                        r["area"] for r in geo_expanded_areas
                     )
                 else:
                     nearby_str = ", ".join(geo_expanded_areas)
 
                 # Build a precise list of which areas the shown properties
-                # actually belong to, with km distances attached.
+                # actually belong to (plain names, no distance attached).
                 areas_with_props_str = ""
                 if properties:
-                    dist_lookup = filters.get("_geo_dist_lookup") or {}
-                    seen_areas  = {}
+                    seen_areas = {}
                     for p in properties:
                         area_raw = (
                             p.get("locality") or
@@ -239,20 +244,14 @@ class HistoryBuilder:
                         area_lower = area_raw.lower()
                         if area_lower in seen_areas:
                             continue
-                        km = None
-                        for key, d in dist_lookup.items():
-                            if key == area_lower or key.startswith(area_lower) or area_lower.startswith(key):
-                                km = d
-                                break
-                        km_str = f"{km} km away" if km is not None else "nearby"
-                        seen_areas[area_lower] = f"{area_raw.title()} ({km_str})"
+                        seen_areas[area_lower] = area_raw.title()
                     areas_with_props_str = ", ".join(seen_areas.values())
 
                 geo_text = (
                     f"\n\nGeo Search Context:"
                     f"\n  user_requested_area: {geo_original_location}"
                     f"\n  direct_listings_in_that_area: NO"
-                    f"\n  nearby_areas_searched (within 4 km): {nearby_str}"
+                    f"\n  nearby_areas_searched: {nearby_str}"
                     f"\n  properties_found_in_nearby_areas: {properties_found_flag}"
                     + (f"\n  areas_where_properties_were_found: {areas_with_props_str}" if areas_with_props_str else "")
                     + f"\n\nRULES based on above:"
@@ -260,9 +259,9 @@ class HistoryBuilder:
                     f"\n    → Acknowledge no direct listings in {geo_original_location}."
                     f"\n    → Name ONLY the areas listed in 'areas_where_properties_were_found' above."
                     f"\n    → Do NOT mention any other nearby area — only the ones with actual listings."
-                    f"\n    → Always mention the exact km distance for each area you name."
+                    f"\n    → Do NOT mention distance or km — just name the area, nothing else."
                     f"\n    → Example: 'I don't have anything directly in Virugambakkam,"
-                    f" but KK Nagar is just 1.7 km away and has a couple of good options.'"
+                    f" but KK Nagar is nearby and has a couple of good options.'"
                     f"\n  IF properties_found_in_nearby_areas = NO:"
                     f"\n    → Say there are no listings in {geo_original_location} or"
                     f" any of its nearby areas right now."
@@ -274,7 +273,7 @@ class HistoryBuilder:
                     f"\n\nGeo Search Context:"
                     f"\n  user_requested_area: {geo_original_location}"
                     f"\n  direct_listings_in_that_area: NO"
-                    f"\n  nearby_areas_searched: none found within 4 km"
+                    f"\n  nearby_areas_searched: none found nearby"
                     f"\n  properties_found_in_nearby_areas: NO"
                     f"\n\nRULE: Say no listings in {geo_original_location} or"
                     f" nearby areas right now. Suggest checking back later."

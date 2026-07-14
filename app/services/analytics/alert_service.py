@@ -151,6 +151,10 @@ class AlertService:
             if property.get("price", 0) > filters["max_price"]:
                 return False
 
+        if filters.get("min_price"):
+            if property.get("price", 0) < filters["min_price"]:
+                return False
+
         if filters.get("furnished"):
             if property.get("furnished") != filters["furnished"]:
                 return False

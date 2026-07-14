@@ -14,12 +14,15 @@ Return ONLY a valid JSON object with these exact keys:
   "location": "single specific area or locality name as string, or null",
   "location_expand": ["list", "of", "area", "names"] or null,
   "bhk": integer (1, 2, 3, 4) or null,
-  "max_price": integer monthly rent in rupees or null,
+  "min_price": integer minimum monthly rent in rupees (lower bound) or null,
+  "max_price": integer maximum monthly rent in rupees (upper bound) or null,
+  "min_sqft": integer minimum square footage (lower bound) or null,
+  "max_sqft": integer maximum square footage (upper bound) or null,
   "furnished": "fully" or "semi" or "unfurnished" or null,
   "near_metro": true or false or null,
   "tenant_type": "bachelor" or "family" or null,
   "owner_type": "owner" or "broker" or null,
-  "property_type": "residential" or "commercial" or "paid_guest" or null
+  "property_type": "residential" or "commercial" or "paid_guest" or "any" or null
 }
 
 PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
@@ -48,6 +51,19 @@ PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
   already established earlier in the conversation if the topic hasn't changed.
 - If the user explicitly switches type mid-conversation (e.g. "actually I need
   a shop instead") — override to the new type immediately.
+- GENERIC PROPERTY WORDS — don't let a stale type silently hide real matches:
+  If the message uses a GENERIC word for what they want — "property",
+  "properties", "place", "option", "listing" — with NO specific type signal
+  anywhere in that same message (no pg/hostel/shop/office/flat/bhk/house/etc.),
+  this means the user is deliberately broadening the search, not continuing
+  the narrower one. Return property_type: "any" (do NOT carry forward or
+  default to whatever type was established earlier in the conversation).
+  Example: earlier turns were about a PG, then the user says "can I get the
+  property from Mumbai" — that's a generic word with no PG signal, so
+  property_type: "any", even though "paid_guest" was set before.
+  Only keep the earlier type when the message has NO property-related word at
+  all (e.g. just a location name or a bare filter like "under 10k") — in that
+  case the established type context still applies.
 
 LOCATION RULES:
 - If user mentions a specific area or locality (Avadi, Velachery, Ambattur etc.)
@@ -70,8 +86,28 @@ GENERAL RULES:
 - If user says "show others", "list more", "what else" with NO new location — return previous filters unchanged
 - If user explicitly mentions a NEW location or area — ALWAYS override previous location with the new one
 - If user says "any", "anything", "all", "whatever is available" — open search.
-  Set bhk, max_price, furnished, near_metro, tenant_type all to null. Keep location if mentioned.
+  Set bhk, min_price, max_price, min_sqft, max_sqft, furnished, near_metro,
+  tenant_type all to null, AND property_type: "any" (don't leave a stale type
+  from earlier in the conversation scoping an "anything available" request).
+  Keep location if mentioned.
 - If user says "cheaper" / "less budget" — lower max_price from previous context by 20-30%
+- PRICE RANGE RULES — read BOTH numbers when the user gives a range, don't just take one:
+  "between X and Y" / "X to Y" / "X-Y" (as a budget/rent/price) → min_price: lower number,
+    max_price: higher number (in rupees; "5k" = 5000). Both must be set together — never
+    drop one end of a range the user actually gave.
+  "under X" / "below X" / "max X" / "budget of X" (single number, no range) → max_price: X,
+    min_price: null (unless a min_price was already established earlier and the user isn't
+    changing it — see GENERAL RULES on carrying forward filters).
+  "above X" / "at least X" / "more than X" / "min budget X" (single number) → min_price: X
+- SQUARE FOOTAGE RULES — read the qualifier word, not just the number:
+  "above X sqft" / "at least X sqft" / "more than X sqft" / "min X sqft" / "minimum X sqft"
+    → min_sqft: X, max_sqft: null
+  "under X sqft" / "below X sqft" / "max X sqft" / "maximum X sqft" / "less than X sqft"
+    → max_sqft: X, min_sqft: null
+  A bare "X sqft" / "X square feet" with NO qualifier word → min_sqft: X (treat a bare
+    size mention as "at least this big" — this is the reading that correctly excludes a
+    smaller listing, e.g. a 300 sqft space, when the user just said "800 square feet").
+  Treat "sqft", "sq ft", "sq.ft", "square feet", and "square foot" as the same unit.
 - If user says "furnished only" → furnished: "fully"
 - If user says "near metro" → near_metro: true
 - If user says "bachelors" / "bachelor friendly" → tenant_type: "bachelor"
@@ -111,7 +147,10 @@ class SearchFilters(BaseModel):
     location:        Optional[str]  = None
     location_expand: Optional[List[str]] = None
     bhk:             Optional[int]  = None
+    min_price:       Optional[int]  = None
     max_price:       Optional[int]  = None
+    min_sqft:        Optional[int]  = None
+    max_sqft:        Optional[int]  = None
     furnished:       Optional[str]  = None
     near_metro:      Optional[bool] = None
     tenant_type:     Optional[str]  = None
@@ -150,9 +189,45 @@ class SearchFilters(BaseModel):
         v = int(v)
         return v if 1 <= v <= 10 else None
 
+    @field_validator("min_price", mode="before")
+    @classmethod
+    def _clean_min_price(cls, v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        v = int(v)
+        return v if v > 0 else None
+
     @field_validator("max_price", mode="before")
     @classmethod
     def _clean_max_price(cls, v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        v = int(v)
+        return v if v > 0 else None
+
+    @field_validator("max_price")
+    @classmethod
+    def _check_price_order(cls, v, info):
+        # Guard against the LLM swapping the two ends of a range (e.g.
+        # returning min_price=10000, max_price=5000) — swap them back rather
+        # than silently producing an impossible "min > max" filter that
+        # would match zero properties.
+        min_v = info.data.get("min_price")
+        if v is not None and min_v is not None and min_v > v:
+            info.data["min_price"], v = v, min_v
+        return v
+
+    @field_validator("min_sqft", mode="before")
+    @classmethod
+    def _clean_min_sqft(cls, v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        v = int(v)
+        return v if v > 0 else None
+
+    @field_validator("max_sqft", mode="before")
+    @classmethod
+    def _clean_max_sqft(cls, v):
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             return None
         v = int(v)
@@ -186,6 +261,10 @@ class SearchFilters(BaseModel):
             "pg":           "paid_guest",
             "paying_guest": "paid_guest",
             "hostel":       "paid_guest",
+            "any":          "any",
+            "all":          "any",
+            "any_type":     "any",
+            "anything":     "any",
         }
         mapped = synonyms.get(normalized)
         if not mapped and normalized:
@@ -195,17 +274,38 @@ class SearchFilters(BaseModel):
     def merge_with_previous(self, previous: Optional[dict]) -> "SearchFilters":
         """Carry forward any field this turn didn't set, same precedence
         rules as before: a fresh location_expand clears location and
-        vice versa; property_type always defaults to residential."""
+        vice versa; a fresh min_sqft/max_sqft clears the OTHER sqft bound
+        from a previous turn (they're the two ends of one range, not two
+        independent filters — a new "above X" narrows the size search,
+        it doesn't AND with a leftover "below Y" from a prior turn and
+        create an impossible/empty range); the same applies to
+        min_price/max_price (a fresh single-ended price like "under 8k"
+        clears a previously-set price on the other end, so it doesn't
+        silently AND with a stale bound from earlier in the conversation
+        and produce an impossible range); property_type always defaults
+        to residential."""
         prev = previous or {}
         data = self.model_dump()
-        location_just_set = data["location"] is not None
-        expand_just_set   = data["location_expand"] is not None
+        location_just_set   = data["location"] is not None
+        expand_just_set      = data["location_expand"] is not None
+        min_sqft_just_set    = data["min_sqft"] is not None
+        max_sqft_just_set    = data["max_sqft"] is not None
+        min_price_just_set   = data["min_price"] is not None
+        max_price_just_set   = data["max_price"] is not None
 
         for key in data:
             if data[key] is None and prev.get(key) is not None:
                 if key == "location" and expand_just_set:
                     continue
                 if key == "location_expand" and location_just_set:
+                    continue
+                if key == "min_sqft" and max_sqft_just_set:
+                    continue
+                if key == "max_sqft" and min_sqft_just_set:
+                    continue
+                if key == "min_price" and max_price_just_set:
+                    continue
+                if key == "max_price" and min_price_just_set:
                     continue
                 data[key] = prev[key]
 

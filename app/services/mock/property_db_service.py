@@ -46,6 +46,19 @@ class PropertyDBService:
         loc_norm    = re.sub(r"\s+", " ", loc_norm).strip()  # collapse spaces
         loc_nospace = re.sub(r"\s+", "", loc_norm)          # "KK Nagar" → "KKNagar"
 
+        # FIX: loc_nospace only strips spaces out of the QUERY. It does nothing
+        # for DB values that have EXTRA spaces the query doesn't — e.g. DB
+        # stores "k k nagar" (space between the two K's) while the user
+        # searches "kk nagar" (no space). Neither "kk nagar" nor "kknagar" is
+        # a substring of "k k nagar", so those listings were silently
+        # invisible to search. Build a "flexible" pattern that allows any
+        # amount of whitespace between every character of the no-space form,
+        # so it matches regardless of which side (query or DB) has the extra
+        # spacing.
+        loc_flex = None
+        if loc_nospace:
+            loc_flex = r"\s*".join(re.escape(ch) for ch in loc_nospace)
+
         patterns = {loc, loc_norm, loc_nospace}
         or_conditions = []
         for p in patterns:
@@ -57,6 +70,16 @@ class PropertyDBService:
                     {"state":    pat},
                     {"address":  pat},
                 ]
+
+        if loc_flex:
+            flex_pat = re.compile(loc_flex, re.IGNORECASE)
+            or_conditions += [
+                {"locality": flex_pat},
+                {"city":     flex_pat},
+                {"state":    flex_pat},
+                {"address":  flex_pat},
+            ]
+
         return or_conditions
 
     def _build_location_query(self, location: str) -> dict:
@@ -67,6 +90,50 @@ class PropertyDBService:
         for area in areas:
             or_conditions += self._location_or_conditions(area.strip())
         return {"$or": or_conditions}
+
+    # =========================================================================
+    # Square-footage filter
+    # FIX: min_sqft/max_sqft were extracted by the filter extractor but never
+    # applied anywhere in the DB query, so a size constraint like "above 500
+    # square feet" had zero effect — a 300 sqft listing would still come back.
+    #
+    # sqFt is stored in Mongo as a STRING (e.g. "450", and in some records
+    # possibly with a unit suffix like "300 sqft"), not a number. Comparing
+    # strings directly (query["sqFt"] = {"$gte": "500"}) is unsafe: string
+    # comparison is lexicographic, so "1500" < "500" as strings even though
+    # 1500 > 500 numerically. Instead, build a $expr that pulls the first
+    # run of digits out of the field with $regexFind and compares that as a
+    # number. Documents where sqFt is missing/blank/non-numeric are excluded
+    # from a sqft-filtered search rather than guessed at.
+    # =========================================================================
+    def _build_sqft_expr(self, min_sqft, max_sqft) -> dict:
+        digits_expr = {
+            "$let": {
+                "vars": {
+                    "match": {
+                        "$regexFind": {
+                            "input": {"$ifNull": [{"$toString": "$sqFt"}, ""]},
+                            "regex": r"\d+"
+                        }
+                    }
+                },
+                "in": {
+                    "$cond": [
+                        {"$eq": ["$$match", None]},
+                        None,
+                        {"$toInt": "$$match.match"}
+                    ]
+                }
+            }
+        }
+
+        conditions = [{"$ne": [digits_expr, None]}]
+        if min_sqft is not None:
+            conditions.append({"$gte": [digits_expr, min_sqft]})
+        if max_sqft is not None:
+            conditions.append({"$lte": [digits_expr, max_sqft]})
+
+        return {"$expr": {"$and": conditions}}
 
     # =========================================================================
     # Main Search
@@ -161,8 +228,28 @@ class PropertyDBService:
         if filters.get("bhk"):
             query["bedRoomCount"] = int(filters["bhk"])
 
-        if filters.get("max_price"):
-            query["monthlyRent"] = {"$lte": filters["max_price"]}
+        # FIX: only max_price ("$lte") was ever applied here — a min_price
+        # ("$gte") had no effect at all, so a range like "between 5k and
+        # 10k" (min_price=5000, max_price=10000) silently behaved as
+        # "under 10k", letting cheaper-than-requested listings slip through
+        # and (combined with the extractor bug this was paired with) could
+        # also wrongly exclude valid mid-range listings depending on which
+        # end got captured. Build one $lte/$gte dict from whichever bounds
+        # are present.
+        min_price = filters.get("min_price")
+        max_price = filters.get("max_price")
+        if min_price is not None or max_price is not None:
+            rent_range = {}
+            if min_price is not None:
+                rent_range["$gte"] = min_price
+            if max_price is not None:
+                rent_range["$lte"] = max_price
+            query["monthlyRent"] = rent_range
+
+        min_sqft = filters.get("min_sqft")
+        max_sqft = filters.get("max_sqft")
+        if min_sqft is not None or max_sqft is not None:
+            query["$expr"] = self._build_sqft_expr(min_sqft, max_sqft)
 
         if filters.get("furnished"):
             query["furnishedType"] = {
@@ -354,14 +441,34 @@ class PropertyDBService:
 
             # Direct owner count (same fallback logic as _apply_common_filters,
             # kept in sync so counts and actual search results never disagree)
+            #
+            # FIX: base_query already carries the LOCATION match under the
+            # "$or" key (see _build_location_query / _build_expanded_location_query).
+            # The old code did `owner_query["$or"] = [...]` to add the owner-type
+            # condition — but a dict can only have one "$or" key, so this
+            # OVERWROTE the location clause entirely instead of combining with
+            # it. The direct-owner count silently became "how many approved
+            # properties of this type exist ANYWHERE in the DB" instead of
+            # "...in this location" — e.g. it returned a global count of 14
+            # commercial direct-owner listings across every city, while the
+            # broker count right below (which uses a different key, "type",
+            # and never collides) stayed correctly scoped to the searched
+            # location. Fix: preserve the existing "$or" as its own clause and
+            # AND it together with the new owner-type "$or".
             owner_query = dict(base_query)
-            owner_query["$or"] = [
-                {"type": {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}},
-                {"$and": [
-                    {"$or": [{"type": {"$exists": False}}, {"type": ""}]},
-                    {"isBrokerExcuse": True},
-                ]},
-            ]
+            existing_or = owner_query.pop("$or", None)
+            owner_type_or = {
+                "$or": [
+                    {"type": {"$regex": "^(direct[_\\s]?owner|owner)$", "$options": "i"}},
+                    {"$and": [
+                        {"$or": [{"type": {"$exists": False}}, {"type": ""}]},
+                        {"isBrokerExcuse": True},
+                    ]},
+                ]
+            }
+            owner_query["$and"] = owner_query.get("$and", []) + (
+                [{"$or": existing_or}] if existing_or else []
+            ) + [owner_type_or]
             direct_count = self.collection.count_documents(owner_query)
 
             # Broker count
@@ -391,6 +498,70 @@ class PropertyDBService:
         except Exception as e:
             print(f"[PropertyDBService] get_all_localities error: {e}")
             return []
+
+    # =========================================================================
+    # Get All Localities WITH their city/state (for geo expander)
+    # FIX: plain get_all_localities() above strips city/state entirely, so
+    # GeoExpander.expand_from_db_with_distances had no way to tell a Chennai
+    # "Anna Nagar" apart from any other city's "Anna Nagar" — its built-in
+    # "skip candidates from a different city" check silently never engaged
+    # because every candidate arrived as a bare string with no city on it.
+    # This returns the richer {"locality","city","state"} shape GeoExpander
+    # is actually built to consume.
+    # =========================================================================
+    def get_all_localities_with_city(self) -> list:
+        if self.collection is None:
+            return []
+        try:
+            docs = self.collection.find(
+                {}, {"locality": 1, "city": 1, "state": 1, "_id": 0}
+            )
+            seen   = set()
+            result = []
+            for doc in docs:
+                loc   = (doc.get("locality") or "").strip()
+                city  = (doc.get("city") or "").strip()
+                state = (doc.get("state") or "").strip()
+                if not loc:
+                    continue
+                key = (loc.lower(), city.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append({"locality": loc, "city": city, "state": state})
+            print(f"[PropertyDBService] get_all_localities_with_city: {len(result)} unique (locality, city) pairs found.")
+            return result
+        except Exception as e:
+            print(f"[PropertyDBService] get_all_localities_with_city error: {e}")
+            return []
+
+    # =========================================================================
+    # Resolve the actual city/state a location string belongs to
+    # FIX: needed so GeoExpander gets a real city_hint/state_hint instead of
+    # running blind — without it, expanding from a location matched every
+    # locality in the ENTIRE database regardless of city (a search for a
+    # Mumbai address could geocode-match, and get labelled "near", a
+    # completely unrelated Chennai street 1,300+ km away), because the
+    # sanity-radius check inside GeoExpander is a no-op when there's no
+    # city_hint to validate against.
+    # =========================================================================
+    def get_city_state_for_location(self, location: str) -> tuple:
+        """Returns (city, state) for the first approved property matching
+        `location` (by locality/city/state/address), or ("", "") if none
+        found — in which case the caller has no reliable city context and
+        geo expansion should be skipped rather than guessed at."""
+        if self.collection is None or not location:
+            return ("", "")
+        try:
+            query = self._build_location_query(location)
+            query["status"] = {"$regex": "^approved$", "$options": "i"}
+            doc = self.collection.find_one(query, {"city": 1, "state": 1, "_id": 0})
+            if not doc:
+                return ("", "")
+            return ((doc.get("city") or "").strip(), (doc.get("state") or "").strip())
+        except Exception as e:
+            print(f"[PropertyDBService] get_city_state_for_location error: {e}")
+            return ("", "")
 
     def get_all_cities(self) -> list:
         if self.collection is None:

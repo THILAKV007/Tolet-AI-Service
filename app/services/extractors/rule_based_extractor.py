@@ -29,6 +29,8 @@ class RuleBasedExtractor:
 
             "bhk": None,
 
+            "min_price": None,
+
             "max_price": None,
 
             "location": None,
@@ -44,6 +46,10 @@ class RuleBasedExtractor:
             "tenant_type": None,
 
             "owner_type": None,
+
+            "min_sqft": None,
+
+            "max_sqft": None,
         }
 
         bhk_match = re.search(
@@ -70,29 +76,106 @@ class RuleBasedExtractor:
         # Now a price is only recognized when it's marked as one: preceded
         # by a price cue word ("under"/"below"/"max"/"budget"/"rent"/
         # "price"), preceded by ₹, or suffixed with "k" (e.g. "15k").
-        price_match = re.search(
-            r'(?:under|below|max|budget(?:\s+of)?|rent(?:\s+of)?|price(?:\s+of)?)'
-            r'\s*₹?\s*(?P<amt1>\d+)(?P<k1>k)?'
-            r'|₹\s*(?P<amt2>\d+)(?P<k2>k)?'
-            r'|\b(?P<amt3>\d+)\s*k\b',
+        #
+        # FIX 2: a RANGE ("budget is between 5k to 10k", "5k-10k", "5000 to
+        # 10000") used to fall through to the single-number pattern above,
+        # which grabbed only the FIRST number (the lower bound) via re.search
+        # and treated it as max_price — silently turning "5k to 10k" into
+        # "under 5k", which wrongly excluded genuine 6k/9k listings that sit
+        # INSIDE the real range. A range is now checked first: if found, both
+        # ends are captured into min_price/max_price. A trailing sqft/sq ft/
+        # square feet unit right after the second number means this was a
+        # SIZE range, not a price range, so it's skipped here and left for
+        # the sqft extractor below.
+        sqft_unit = r"(?:sq\.?\s*ft\.?|sqft|square\s*(?:feet|foot))"
+
+        range_match = re.search(
+            r'(?:between\s+)?₹?\s*(?P<lo>\d+)\s*(?P<lok>k)?'
+            r'\s*(?:-|to|and)\s*'
+            r'₹?\s*(?P<hi>\d+)\s*(?P<hik>k)?'
+            rf'(?!\s*{sqft_unit})',
             query
         )
 
-        if price_match:
+        if range_match:
 
-            amount = int(
-                price_match.group("amt1")
-                or price_match.group("amt2")
-                or price_match.group("amt3")
+            lo = int(range_match.group("lo"))
+            hi = int(range_match.group("hi"))
+
+            if range_match.group("lok"):
+                lo *= 1000
+
+            if range_match.group("hik"):
+                hi *= 1000
+
+            lo, hi = min(lo, hi), max(lo, hi)
+
+            if hi >= 1000:
+                filters["min_price"] = lo
+                filters["max_price"] = hi
+
+        else:
+
+            price_match = re.search(
+                r'(?:under|below|max|budget(?:\s+of)?|rent(?:\s+of)?|price(?:\s+of)?)'
+                r'\s*₹?\s*(?P<amt1>\d+)(?P<k1>k)?'
+                r'|₹\s*(?P<amt2>\d+)(?P<k2>k)?'
+                r'|\b(?P<amt3>\d+)\s*k\b',
+                query
             )
 
-            if price_match.group("k1") or price_match.group("k2"):
+            if price_match:
 
-                amount *= 1000
+                amount = int(
+                    price_match.group("amt1")
+                    or price_match.group("amt2")
+                    or price_match.group("amt3")
+                )
 
-            if amount >= 1000:
+                if (
+                    price_match.group("k1")
+                    or price_match.group("k2")
+                    or price_match.group("amt3") is not None
+                ):
 
-                filters["max_price"] = amount
+                    amount *= 1000
+
+                if amount >= 1000:
+
+                    filters["max_price"] = amount
+
+        # NEW: square footage was never extracted anywhere in this codebase —
+        # e.g. "shop in kk nagar 800 square feet" silently dropped the "800
+        # square feet" part, so the DB search had no size constraint at all
+        # and returned every matching listing regardless of size.
+        #
+        # "under/below/max X sqft"        → max_sqft = X   (upper bound)
+        # "at least/above/min X sqft"     → min_sqft = X   (lower bound)
+        # bare "X sqft" / "X square feet" → min_sqft = X   (treat as "at
+        #   least this big" — the common real-world reading of a bare size
+        #   mention, and it correctly excludes smaller listings like a
+        #   300 sqft space when the user asked for "800 square feet")
+        sqft_unit = r"(?:sq\.?\s*ft\.?|sqft|square\s*(?:feet|foot))"
+
+        max_sqft_match = re.search(
+            rf'(?:under|below|max(?:imum)?|less\s+than)\s*(\d+)\s*{sqft_unit}',
+            query
+        )
+        min_sqft_match = re.search(
+            rf'(?:at\s*least|above|more\s+than|min(?:imum)?)\s*(\d+)\s*{sqft_unit}',
+            query
+        )
+        bare_sqft_match = re.search(
+            rf'(\d+)\s*{sqft_unit}',
+            query
+        )
+
+        if max_sqft_match:
+            filters["max_sqft"] = int(max_sqft_match.group(1))
+        elif min_sqft_match:
+            filters["min_sqft"] = int(min_sqft_match.group(1))
+        elif bare_sqft_match:
+            filters["min_sqft"] = int(bare_sqft_match.group(1))
 
         # FIX: "unfurnished" contains "furnished" as a substring, so the old
         # elif chain (fully furnished / semi furnished / furnished) fell
