@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,9 +19,19 @@ class SessionStore:
     def __init__(self):
 
         self.ttl      = int(os.getenv("SESSION_TTL_SECONDS", 3600))
+
+        # Active search "context" (last filters/properties) is intentionally
+        # much shorter-lived than the overall chat history. Without this,
+        # filters/properties from several minutes ago could still silently
+        # apply to a completely new train of thought — the "AI cache should
+        # forget" mismatch. This does NOT wipe the conversation transcript,
+        # only the filters/properties used for refilter/discussion logic.
+        self.context_ttl = int(os.getenv("SESSION_CONTEXT_TTL_SECONDS", 120))
+
         self.client   = None
         self._fallback = {}   # ← always initialised — fixes AttributeError when
                               #   redis package is missing and _connect() is never called
+        self._context_fallback = {}  # in-memory fallback: {session_id: {"data": {...}, "ts": epoch}}
 
         if REDIS_AVAILABLE:
             self._connect()
@@ -48,6 +59,66 @@ class SessionStore:
     # ===================================
     def _key(self, session_id: str) -> str:
         return f"tolet:session:{session_id}"
+
+    def _context_key(self, session_id: str) -> str:
+        return f"tolet:context:{session_id}"
+
+    # ===================================
+    # Short-lived active search context
+    # (filters + last properties shown).
+    # Expires independently of, and much
+    # faster than, the chat history TTL.
+    # ===================================
+    def get_context(self, session_id: str) -> dict:
+        try:
+            if self.client:
+                raw = self.client.get(self._context_key(session_id))
+                if raw:
+                    return json.loads(raw)
+                return {"filters": {}, "properties": []}
+
+            entry = self._context_fallback.get(session_id)
+            if not entry:
+                return {"filters": {}, "properties": []}
+            if (time.time() - entry["ts"]) > self.context_ttl:
+                # Expired — drop it so nothing stale leaks through
+                self._context_fallback.pop(session_id, None)
+                return {"filters": {}, "properties": []}
+            return entry["data"]
+
+        except Exception as e:
+            print(f"[SessionStore] get_context error: {e}")
+            return {"filters": {}, "properties": []}
+
+    def set_context(self, session_id: str, filters: dict, properties: list):
+        try:
+            data = {"filters": filters or {}, "properties": properties or []}
+            if self.client:
+                self.client.setex(
+                    self._context_key(session_id),
+                    self.context_ttl,
+                    json.dumps(data, default=str)
+                )
+            else:
+                self._context_fallback[session_id] = {"data": data, "ts": time.time()}
+        except Exception as e:
+            print(f"[SessionStore] set_context error: {e}")
+
+    def clear(self, session_id: str):
+        """
+        Explicit 'forget the above conversation' handler. Wipes both the
+        full session (history/messages/filters/properties) and the
+        short-lived active-context key, so nothing carries forward.
+        """
+        try:
+            if self.client:
+                self.client.delete(self._key(session_id))
+                self.client.delete(self._context_key(session_id))
+            else:
+                self._fallback.pop(session_id, None)
+                self._context_fallback.pop(session_id, None)
+        except Exception as e:
+            print(f"[SessionStore] clear error: {e}")
 
     def _default_session(self) -> dict:
         return {
@@ -134,6 +205,17 @@ class SessionStore:
 
         self.set(session_id, session)
 
+        # Mirror the active filters/properties into the short-TTL context
+        # store too, so refilter/discussion logic naturally forgets them
+        # after context_ttl seconds even though the full transcript in
+        # `session` sticks around for the longer session TTL.
+        if turn.get("properties") or turn.get("filters"):
+            self.set_context(
+                session_id,
+                turn.get("filters") or session.get("filters", {}),
+                turn.get("properties") or session.get("properties", []),
+            )
+
     def get_latest_with_properties(self, session_id: str) -> dict:
         session = self.get(session_id)
         history = session.get("history", [])
@@ -145,12 +227,10 @@ class SessionStore:
         return history[-1] if history else None
 
     def get_properties(self, session_id: str) -> list:
-        session = self.get(session_id)
-        return session.get("properties", [])
+        return self.get_context(session_id).get("properties", [])
 
     def get_filters(self, session_id: str) -> dict:
-        session = self.get(session_id)
-        return session.get("filters", {})
+        return self.get_context(session_id).get("filters", {})
 
     def delete(self, session_id: str):
         try:

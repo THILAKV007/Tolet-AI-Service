@@ -6,6 +6,34 @@ from services.geo.spell_corrector import _CHENNAI_REFERENCE_LOCALITIES, _CITY_ST
 import re
 
 
+def _language_instruction(language: str) -> str:
+    """
+    Turns the LanguageDetector output ("tamil" / "tanglish" / "english")
+    into an explicit instruction appended to the system/user prompt.
+    Previously LanguageDetector was never actually wired into the
+    response pipeline, so the model was never told what language to
+    reply in and defaulted to English regardless of the user's query.
+    """
+    if language == "tamil":
+        return (
+            "\n\nLANGUAGE: The user wrote in Tamil. Respond ENTIRELY in Tamil "
+            "script (தமிழ்). Do not mix in English sentences — property names, "
+            "numbers, and area names may stay as-is, but every sentence around "
+            "them must be in Tamil."
+        )
+    if language == "tanglish":
+        return (
+            "\n\nLANGUAGE: The user wrote in Tanglish (Tamil words typed in "
+            "Roman/English script, mixed with English). Respond ENTIRELY in "
+            "Tanglish, matching that same casual Roman-script Tamil-English "
+            "mix — do not switch to pure English and do not switch to Tamil "
+            "script."
+        )
+    return (
+        "\n\nLANGUAGE: The user wrote in English. Respond ENTIRELY in English."
+    )
+
+
 DETAIL_REQUEST_SIGNALS = [
     "yeah", "yes", "sure", "of course",
     "ofcourse", "okay", "ok", "go ahead",
@@ -24,6 +52,18 @@ _PRICE_PATTERN = re.compile(r'(?:₹|rs\.?\s?)\s?([\d][\d,]*)', re.IGNORECASE)
 _META_NOTE_PATTERN = re.compile(
     r'\(\s*note\s*:.*?\)|\[\s*note\s*:.*?\]|^\s*note\s*:.*$',
     re.IGNORECASE | re.DOTALL | re.MULTILINE
+)
+
+# Contradictory "found nothing" hedge sentences that sometimes appear in the
+# SAME reply as real, listed properties — e.g. "I couldn't find any listings
+# that exactly match your budget and preferences, but here's what I found:"
+# followed immediately by 3 real listings. Confirmed in production. Splits
+# on sentence boundaries and drops only the offending sentence(s) rather
+# than the whole response, since everything else in the reply is grounded.
+_NO_MATCH_HEDGE_PATTERN = re.compile(
+    r'[^.!?\n]*\b(couldn\'?t find|could not find|no (exact )?match(es)?|'
+    r'nothing (exactly )?match(es|ed)?|didn\'?t find any)\b[^.!?\n]*[.!?]',
+    re.IGNORECASE
 )
 
 # ── Location grounding ────────────────────────────────────────────────────────
@@ -62,6 +102,20 @@ class ResponseAI:
         if not text:
             return text
         cleaned = _META_NOTE_PATTERN.sub("", text)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+        return cleaned or text  # never return empty — fall back to original
+
+    # =========================================================================
+    # No-match-hedge stripper — safety net for the model contradicting
+    # itself: claiming "couldn't find any listings that match" in the same
+    # reply where it then lists real properties. Only runs when properties
+    # actually exist; a true zero-results reply is left untouched.
+    # =========================================================================
+    def _strip_no_match_hedge(self, text: str, properties: list) -> str:
+        if not text or not properties:
+            return text
+        cleaned = _NO_MATCH_HEDGE_PATTERN.sub("", text)
+        cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
         return cleaned or text  # never return empty — fall back to original
 
@@ -186,7 +240,8 @@ class ResponseAI:
         geo_original_location: str = None,
         geo_expanded_areas: list = None,
         owner_type_counts: dict = None,
-        owner_type_area: str = None
+        owner_type_area: str = None,
+        language: str = "english"
     ) -> str:
 
         try:
@@ -211,7 +266,7 @@ class ResponseAI:
 
             messages = self.builder.build(
                 session_messages=session_messages or [],
-                system_prompt=RESPONSE_SYSTEM_PROMPT
+                system_prompt=RESPONSE_SYSTEM_PROMPT + _language_instruction(language)
             )
 
             messages.append({
@@ -232,6 +287,7 @@ class ResponseAI:
             )
 
             ai_response = self._strip_meta_notes(ai_response)
+            ai_response = self._strip_no_match_hedge(ai_response, properties)
 
             allowed_locations = self._collect_allowed_locations(
                 properties=properties,
@@ -265,7 +321,8 @@ class ResponseAI:
         self,
         query: str,
         filters: dict,
-        session_messages: list = None
+        session_messages: list = None,
+        language: str = "english"
     ) -> str:
 
         try:
@@ -284,7 +341,7 @@ Rules:
   fetched yet.
 - Do NOT expose filter names or JSON.
 - Vary your phrasing every time — never robotic or repetitive.
-"""
+""" + _language_instruction(language)
             messages = [{"role": "system", "content": system_prompt}]
 
             if session_messages:
@@ -325,7 +382,8 @@ Rules:
         self,
         query: str,
         knowledge: str,
-        session_messages: list = None
+        session_messages: list = None,
+        language: str = "english"
     ) -> str:
 
         try:
@@ -334,7 +392,7 @@ You are Tolet AI — a conversational rental property assistant for India.
 Answer ONLY using the provided Tolet AI knowledge context.
 Be warm, natural, and vary your phrasing every time.
 Minimum 3 lines. Never robotic or repetitive.
-"""
+""" + _language_instruction(language)
             messages = [{"role": "system", "content": system_prompt}]
 
             if session_messages:

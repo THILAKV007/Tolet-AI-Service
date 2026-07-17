@@ -1,9 +1,15 @@
 import os
 import json
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 
 load_dotenv()
+
+# Every call to OpenRouter/DeepSeek was previously made with NO timeout at
+# all, meaning a slow upstream response could hang a request indefinitely.
+# 12s is generous enough for a normal completion but stops runaway waits
+# from stacking up when 2-3 calls happen sequentially in one request.
+_REQUEST_TIMEOUT_SECONDS = float(os.getenv("LLM_REQUEST_TIMEOUT", 12))
 
 
 # ── Model Configuration ────────────────────────────────────────────────────────
@@ -55,13 +61,22 @@ def _build_client() -> OpenAI:
     api_key  = _PROVIDER_API_KEYS.get(_PROVIDER, "")
     if not base_url:
         raise ValueError(f"[LLMClient] Unknown LLM_PROVIDER: '{_PROVIDER}'")
-    return OpenAI(api_key=api_key or "no-key", base_url=base_url)
+    return OpenAI(api_key=api_key or "no-key", base_url=base_url, timeout=_REQUEST_TIMEOUT_SECONDS)
+
+
+def _build_async_client() -> AsyncOpenAI:
+    base_url = _PROVIDER_BASE_URLS.get(_PROVIDER)
+    api_key  = _PROVIDER_API_KEYS.get(_PROVIDER, "")
+    if not base_url:
+        raise ValueError(f"[LLMClient] Unknown LLM_PROVIDER: '{_PROVIDER}'")
+    return AsyncOpenAI(api_key=api_key or "no-key", base_url=base_url, timeout=_REQUEST_TIMEOUT_SECONDS)
 
 
 class LLMClient:
 
     def __init__(self):
         self.client        = _build_client()
+        self.async_client  = _build_async_client()
         self.default_model = _resolve_default_model()
         print(
             f"[LLMClient] Provider: {_PROVIDER.upper()} | "
@@ -220,3 +235,78 @@ class LLMClient:
         except Exception as e:
             print(f"[LLMClient] classify error: {e}")
             return "property_search"
+
+    # ── Async variants ──────────────────────────────────────────────────────
+    # Used by ChatService to fire intent-detection and filter-extraction at
+    # the same time (asyncio.gather) instead of waiting for one full
+    # round-trip before starting the next. This alone roughly halves the
+    # pre-response latency for any query that needs both calls.
+    async def classify_async(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str = None
+    ) -> str:
+        try:
+            response = await self.async_client.chat.completions.create(
+                model=model or self.default_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt}
+                ],
+                temperature=0.0,
+                max_tokens=20
+            )
+            content = response.choices[0].message.content
+            if not content:
+                return "property_search"
+            return content.strip().lower()
+        except Exception as e:
+            print(f"[LLMClient] classify_async error: {e}")
+            return "property_search"
+
+    async def chat_json_async(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str = None,
+        temperature: float = 0.1,
+        max_tokens: int = 1200
+    ) -> dict:
+        try:
+            kwargs = dict(
+                model=model or self.default_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            if self._supports_json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            else:
+                kwargs["messages"][0]["content"] = (
+                    system_prompt.rstrip() +
+                    "\n\nIMPORTANT: Respond ONLY with valid JSON. No explanation, no markdown, no backticks."
+                )
+
+            response = await self.async_client.chat.completions.create(**kwargs)
+            raw = response.choices[0].message.content
+            if not raw:
+                return {}
+
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            raw = raw.strip()
+            return json.loads(raw)
+
+        except json.JSONDecodeError as e:
+            print(f"[LLMClient] chat_json_async JSON parse error: {e}")
+            return {}
+        except Exception as e:
+            print(f"[LLMClient] chat_json_async error: {e}")
+            return {}

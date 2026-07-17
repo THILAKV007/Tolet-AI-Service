@@ -22,8 +22,21 @@ Return ONLY a valid JSON object with these exact keys:
   "near_metro": true or false or null,
   "tenant_type": "bachelor" or "family" or null,
   "owner_type": "owner" or "broker" or null,
-  "property_type": "residential" or "commercial" or "paid_guest" or "any" or null
+  "property_type": "residential" or "commercial" or "paid_guest" or "any" or null,
+  "rent_type": "monthly" or "lease" or null,
+  "lease_months": integer number of months (e.g. 6, 11, 24) or null
 }
+
+LEASE RULES:
+- If the user says "lease property", "lease", "on lease", "fixed term", "long term lease" →
+  rent_type: "lease".
+- If the user gives a specific duration ("11 month lease", "2 year lease", "24 months") →
+  set lease_months to that number of months (convert years to months, e.g. "2 year" → 24)
+  AND set rent_type: "lease".
+- If the user says "monthly rent", "month to month", "monthly" → rent_type: "monthly".
+- If lease/rent-type isn't mentioned at all, return both as null — do NOT default to
+  "monthly", since most listings are monthly and forcing this filter would wrongly
+  exclude lease listings from generic searches.
 
 PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
 - Figure out what the property is FOR, from the whole sentence, not a single word.
@@ -156,6 +169,8 @@ class SearchFilters(BaseModel):
     tenant_type:     Optional[str]  = None
     owner_type:      Optional[str]  = None
     property_type:   Optional[str]  = "residential"
+    rent_type:       Optional[str]  = None
+    lease_months:    Optional[int]  = None
 
     @field_validator("location", mode="before")
     @classmethod
@@ -247,6 +262,22 @@ class SearchFilters(BaseModel):
     @classmethod
     def _clean_owner_type(cls, v):
         return v if v in ("owner", "broker") else None
+
+    @field_validator("rent_type", mode="before")
+    @classmethod
+    def _clean_rent_type(cls, v):
+        if not isinstance(v, str):
+            return None
+        v = v.strip().lower()
+        return v if v in ("monthly", "lease") else None
+
+    @field_validator("lease_months", mode="before")
+    @classmethod
+    def _clean_lease_months(cls, v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        v = int(v)
+        return v if 1 <= v <= 120 else None
 
     @field_validator("property_type", mode="before")
     @classmethod

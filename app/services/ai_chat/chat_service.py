@@ -3,6 +3,7 @@ import re
 import concurrent.futures
 
 from services.translation.translation_pipeline import TranslationPipeline
+from services.translation.language_detector import LanguageDetector
 from services.extractors.hybrid_extractor import HybridExtractor
 from services.ai_chat.response_ai import ResponseAI
 from services.ai_chat.intent_detector import IntentDetector
@@ -29,6 +30,7 @@ class ChatService:
     def __init__(self):
 
         self.translation_pipeline = TranslationPipeline()
+        self.language_detector    = LanguageDetector()
         self.extractor            = HybridExtractor()
         self.property_service     = PropertyDBService()
         self.ranking_engine       = RankingEngine()
@@ -79,6 +81,33 @@ class ChatService:
     # never mentioned this time, causing real listings to be filtered out
     # and misreported as "no properties available".
     # =========================================================================
+    # Explicit "different LOCATION" — user wants a genuinely new area,
+    # so the old location filter should be dropped.
+    _WANTS_DIFFERENT_LOCATION_PATTERN = re.compile(
+        r"different\s+(location|area|city|locality|place)"
+        r"|other\s+(location|area|city|locality|place)"
+        r"|(somewhere|any\s?where)\s+else"
+        r"|change\s+(the\s+)?(location|area)",
+        re.IGNORECASE,
+    )
+
+    # Generic "not these ones / apart from above / something else" — user
+    # wants NEW listings under the SAME location/criteria, not a location
+    # change. Broadened to actually catch real phrasing like "different
+    # from above" (a bare "different X" pattern wasn't enough — it
+    # requires a noun right after "different", which "different from
+    # above" doesn't have).
+    _WANTS_DIFFERENT_RESULTS_PATTERN = re.compile(
+        r"different\s+(from\s+)?(above|these|those|this)"
+        r"|other\s+than\s+(above|these|those|this)"
+        r"|apart\s+from\s+(above|these|those)"
+        r"|(some\s?thing|any\s?thing)\s+else"
+        r"|not\s+(this|these|those)\s+(one|ones)?"
+        r"|(show|give)\s+me\s+(different|other|new|more)\s+(ones?|options?|properties)"
+        r"|(different|other|new)\s+(option|options|propert(y|ies))",
+        re.IGNORECASE,
+    )
+
     def _mentions_known_location(self, query: str) -> bool:
         if not query or not self._known_locations:
             return False
@@ -210,7 +239,34 @@ class ChatService:
     # =========================================================================
     # Main Query Processor
     # =========================================================================
+    # Explicit "forget the above conversation" phrasing. Checked BEFORE
+    # anything else — including translation/LLM calls — so it's instant
+    # and never accidentally gets swallowed by domain-guard/intent logic.
+    _FORGET_PATTERN = re.compile(
+        r"(forget|clear|erase|reset|wipe)\s+(the\s+)?(above\s+|previous\s+|entire\s+|"
+        r"whole\s+|this\s+)?(conversation|convo|chat|context|history|memory|everything)"
+        r"|^\s*(start\s+over|start\s+fresh|new\s+chat|reset)\s*[.!]?\s*$",
+        re.IGNORECASE,
+    )
+
     def process_query(self, session_id: str, query: str) -> dict:
+
+        # Fast, zero-LLM exit for an explicit "forget" request.
+        if self._FORGET_PATTERN.search(query.strip()):
+            self.session_store.clear(session_id)
+            return {
+                "success":    True,
+                "query":      query,
+                "intent":     "reset_context",
+                "filters":    {},
+                "properties": [],
+                "response":   "Done — I've cleared our conversation. What are you looking for?"
+            }
+
+        # Detect language ONCE up front (Tamil script / Tanglish / English)
+        # and carry it through every response_ai.generate* call below, so
+        # the reply matches the language the user actually wrote in.
+        detected_language = self.language_detector.detect(query)
 
         translation_result = self.translation_pipeline.process(query)
         cleaned_query      = translation_result["cleaned_query"]
@@ -233,7 +289,8 @@ class ChatService:
             ai_response = self.response_ai.generate_knowledge_response(
                 query=cleaned_query,
                 knowledge=knowledge,
-                session_messages=session_messages
+                session_messages=session_messages,
+                language=detected_language
             )
             self._save_turn(session_id, query, ai_response, {}, [], "knowledge")
             return {
@@ -272,12 +329,71 @@ class ChatService:
         # (owner-posted, no broker). If there's nothing in current_props to
         # contact, this can never be a genuine contact request — treat it as
         # a fresh search instead so it isn't dropped on the floor.
+        # User explicitly wants NEW properties, not the same ones re-shown
+        # under a narrower filter (e.g. "different location", "show me
+        # something else", "apart from above", "different from above").
+        wants_different_location = bool(
+            current_props and self._WANTS_DIFFERENT_LOCATION_PATTERN.search(cleaned_query)
+        )
+        wants_different_results = bool(
+            current_props and (
+                wants_different_location or
+                self._WANTS_DIFFERENT_RESULTS_PATTERN.search(cleaned_query)
+            )
+        )
+        if wants_different_location and intent != "property_search":
+            print(
+                "[ChatService] Intent override: "
+                f"'{intent}' → 'property_search' (user explicitly wants a different location)"
+            )
+            intent = "property_search"
+        elif wants_different_results and not wants_different_location and intent not in {"property_search", "refilter"}:
+            # Generic "different from above" / "something else" — the user
+            # wants NEW listings under the SAME criteria (area, bhk, budget
+            # etc.), not a location change. Route through refilter so
+            # filters_for_extraction below preserves current_filters
+            # instead of being wiped to {} — only the already-shown
+            # property IDs get excluded (handled at search time below).
+            print(
+                "[ChatService] Intent override: "
+                f"'{intent}' → 'refilter' (user wants different results within same criteria)"
+            )
+            intent = "refilter"
+
         if intent == "contact_request" and not current_props:
             print(
                 f"[ChatService] Intent override: 'contact_request' → 'property_search' "
                 f"(no properties in context to contact)"
             )
             intent = "property_search"
+
+        # =====================================================================
+        # Greeting fast-exit — the core latency fix.
+        # Previously a plain "hi" still ran filter extraction (a full LLM
+        # chat_json call) and then response generation (another LLM call),
+        # on top of the intent-classify call above — 3 sequential network
+        # round trips just to say hello. A greeting never needs filters or
+        # property context, so skip straight to a templated reply, in the
+        # detected language, with NO further LLM calls.
+        # =====================================================================
+        if intent == "greeting":
+            greetings_by_language = {
+                "tamil":    "வணக்கம்! நான் Tolet AI. உங்களுக்கு எந்த பகுதியில், எந்த மாதிரியான வீடு தேவை?",
+                "tanglish": "Vanakkam! Naan Tolet AI. Neenga etha area la, etha type property venum sollunga?",
+                "english":  "Hi there! I'm Tolet AI. Tell me the area and the kind of property you're looking for, and I'll find some options.",
+            }
+            ai_response = greetings_by_language.get(detected_language, greetings_by_language["english"])
+            self._save_turn(session_id, query, ai_response, current_filters, current_props, "greeting")
+            return {
+                "success":          True,
+                "query":            query,
+                "intent":           "greeting",
+                "translated_query": translation_result["translated_query"],
+                "cleaned_query":    cleaned_query,
+                "filters":          current_filters,
+                "properties":       current_props,
+                "response":         ai_response
+            }
 
         if intent == "property_search":
             filters_for_extraction = {}
@@ -322,6 +438,7 @@ class ChatService:
                 ),
                 "near_metro":  ("metro",),
                 "furnished":   ("furnished",),
+                "rent_type":   ("lease", "monthly", "month to month"),
             }
             for field, keywords in field_keywords.items():
                 if filters.get(field) and not any(kw in q_lower_sanitize for kw in keywords):
@@ -344,6 +461,9 @@ class ChatService:
             if filters.get("max_price") and not has_digit:
                 print(f"[ChatService] Dropping stale max_price '{filters['max_price']}' — no number in this message.")
                 filters["max_price"] = None
+            if filters.get("lease_months") and not has_digit:
+                print(f"[ChatService] Dropping stale lease_months '{filters['lease_months']}' — no number in this message.")
+                filters["lease_months"] = None
 
         # Capture what the user actually typed/meant as the location BEFORE
         # geo-expansion (below) can null out filters["location"] or swap it
@@ -525,7 +645,8 @@ class ChatService:
             ai_response = self.response_ai.generate_clarification(
                 query=cleaned_query,
                 filters=filters,
-                session_messages=session_messages
+                session_messages=session_messages,
+                language=detected_language
             )
             self._save_turn(
                 session_id=session_id,
@@ -559,6 +680,20 @@ class ChatService:
             properties = self._filter_by_location_match(
                 properties, filters, geo_expanded=is_geo_expanded
             )
+
+            # "Different location / other properties / apart from above" —
+            # drop anything already shown this session so the same 2-3
+            # listings don't keep getting re-served on every request.
+            if wants_different_results and current_props:
+                shown_ids = {p.get("id") for p in current_props if p.get("id")}
+                filtered_out_count = len(properties)
+                properties = [p for p in properties if p.get("id") not in shown_ids]
+                filtered_out_count -= len(properties)
+                if filtered_out_count:
+                    print(
+                        f"[ChatService] Excluded {filtered_out_count} already-shown "
+                        f"properties (user asked for different results)."
+                    )
 
             if not properties:
                 if filters.get("location"):
@@ -738,7 +873,8 @@ class ChatService:
             session_messages=session_messages,
             geo_original_location=geo_original_location,
             geo_expanded_areas=geo_expanded_areas,
-            owner_type_counts=owner_type_counts
+            owner_type_counts=owner_type_counts,
+            language=detected_language
         )
 
         self._save_turn(

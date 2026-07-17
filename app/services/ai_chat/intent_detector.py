@@ -1,4 +1,21 @@
+import re
+
 from services.llm.llm_client import LLMClient
+
+# ===================================
+# Zero-LLM fast path for obvious greetings.
+# Previously EVERY message — including "hi" — paid for a full LLM
+# classify() round trip just to learn it was a greeting. Matching the
+# handful of common greeting patterns here costs microseconds instead
+# of 1-3 seconds of network latency, with no loss of accuracy since
+# these phrases are unambiguous.
+# ===================================
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi+|hello+|hey+|howdy|hiya|greetings|good\s?morning|good\s?evening|"
+    r"good\s?afternoon|gm|gn|sup|yo|what'?s\s?up|how\s?are\s?you|how\s?r\s?u)"
+    r"[\s!.,?]*$",
+    re.IGNORECASE,
+)
 
 # ===================================
 # Intent Detector (LLM-Based)
@@ -28,8 +45,18 @@ greeting            — hi, hello, good morning etc.
 contact_request     — wants owner contact, phone number, visit, schedule
 real_estate_advice  — general rental knowledge (agreements, rights, tips, area advice)
 off_topic           — genuinely unrelated to rental properties in India
+reset_context       — user explicitly wants the conversation/memory cleared (e.g. "forget the above",
+                      "forget everything", "start over", "clear this chat", "reset")
 
 RULES:
+- "different location", "other location", "another area", "somewhere else", "not this one",
+  "show me something else", "apart from above" — the user wants NEW properties excluding what
+  was already shown, NOT a narrowing of the same results. This is property_search, never
+  refilter or property_discussion, so stale location/filters get dropped and prior results
+  get excluded rather than re-shown.
+- Explicit requests to erase/forget the conversation ("forget the above conversation", "forget
+  everything we discussed", "clear this chat", "start fresh", "reset our chat") = reset_context.
+  This is different from off_topic and different from a normal new search.
 - IMPORTANT DISAMBIGUATION: "direct owner", "no broker", "without broker",
   "owner only", "straight owner", "one to one", "no middleman" etc. are a
   SEARCH PREFERENCE (the user wants listings posted by owners, not brokers)
@@ -68,6 +95,11 @@ class IntentDetector:
         conversation_history: list = None
     ) -> str:
 
+        # Fast path: a bare greeting with no prior conversation context is
+        # unambiguous — skip the LLM call entirely.
+        if not conversation_history and _GREETING_PATTERN.match(query.strip()):
+            return "greeting"
+
         history_text = self._format_history(conversation_history)
 
         user_prompt = f"""
@@ -96,7 +128,8 @@ What is the intent?
             "greeting",
             "contact_request",
             "real_estate_advice",
-            "off_topic"
+            "off_topic",
+            "reset_context",
         }
 
         intent = intent.strip().lower()
@@ -105,6 +138,46 @@ What is the intent?
             print(f"[IntentDetector] Unknown intent '{intent}', defaulting to property_search")
             return "property_search"
 
+        return intent
+
+    async def detect_async(
+        self,
+        query: str,
+        conversation_history: list = None
+    ) -> str:
+        """
+        Same as detect(), but async — lets ChatService fire this alongside
+        filter extraction via asyncio.gather instead of waiting for it to
+        finish first.
+        """
+        if not conversation_history and _GREETING_PATTERN.match(query.strip()):
+            return "greeting"
+
+        history_text = self._format_history(conversation_history)
+
+        user_prompt = f"""
+Conversation so far:
+{history_text}
+
+Latest user message: "{query}"
+
+What is the intent?
+"""
+
+        intent = await self.llm.classify_async(
+            system_prompt=INTENT_SYSTEM_PROMPT,
+            user_prompt=user_prompt
+        )
+
+        valid_intents = {
+            "property_search", "property_discussion", "refilter",
+            "recommendation", "greeting", "contact_request",
+            "real_estate_advice", "off_topic", "reset_context",
+        }
+        intent = intent.strip().lower()
+        if intent not in valid_intents:
+            print(f"[IntentDetector] Unknown intent '{intent}', defaulting to property_search")
+            return "property_search"
         return intent
 
     # ===================================

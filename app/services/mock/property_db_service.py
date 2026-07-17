@@ -263,6 +263,19 @@ class PropertyDBService:
                 "$options": "i"
             }
 
+        # ── Lease-specific filters ───────────────────────────────────────────
+        # rentType: "monthly" (default recurring rent) vs "lease" (fixed-term,
+        # usually paid upfront for the whole leaseMonths period). A user
+        # asking "I want lease property" should only see rentType="lease"
+        # listings, optionally narrowed further by leaseMonths.
+        rent_type = filters.get("rent_type")
+        if rent_type:
+            query["rentType"] = {"$regex": f"^{re.escape(rent_type)}$", "$options": "i"}
+
+        lease_months = filters.get("lease_months")
+        if lease_months:
+            query["leaseMonths"] = int(lease_months)
+
         tenant_type = filters.get("tenant_type")
         if tenant_type == "bachelor":
             query["preferredTenant"] = {"$regex": "bachelor", "$options": "i"}
@@ -403,6 +416,10 @@ class PropertyDBService:
             "water_resource":     (doc.get("waterResource") or "").strip(),
             "property_age":       (doc.get("propertyAge") or "").strip(),
             "payment_via":        (doc.get("paidRentalVia") or "").strip(),
+            # ── Lease-specific fields ───────────────────────────────────────────
+            # e.g. rentType: "monthly" / "lease"; leaseMonths: 11, 24, etc.
+            "rent_type":          (doc.get("rentType") or "").strip(),
+            "lease_months":       doc.get("leaseMonths"),
         }
 
     # =========================================================================
