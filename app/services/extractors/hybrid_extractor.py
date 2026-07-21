@@ -4,13 +4,13 @@ from typing import Optional, List
 import re as _re
 
 # ── Deterministic safety net for the "generic property word" broadening rule ──
-# The system prompt tells the LLM to return property_type: "any" when the
+# The system prompt tells the LLM to return propertyType: "any" when the
 # user's message uses a generic word ("property", "listing", etc.) with NO
 # specific residential/commercial/PG signal — e.g. "can I get the lease
 # property". That's a whole-sentence judgment call buried in a very long
 # prompt, and in practice the LLM doesn't always catch it — when it returns
 # null instead of "any", merge_with_previous()'s own fallback silently
-# defaults property_type to "residential", which can wrongly hide real
+# defaults propertyType to "residential", which can wrongly hide real
 # commercial/PG listings that match everything else the user asked for
 # (e.g. a lease query where the only lease listing is commercial). This
 # regex check re-derives the same rule directly from the raw message as a
@@ -26,6 +26,77 @@ _TYPE_SIGNAL_WORDS = _re.compile(
     r"commercial|business|store|clinic)\b",
     _re.IGNORECASE,
 )
+
+# ── Deterministic safety net for "X lakh(s)" / "X crore(s)" budgets ──────────
+# The extractor prompt tells the LLM "1 lakh = 100000" and leaves it to do
+# that arithmetic itself for every message — unlike "k" (thousand), which
+# already has a solid regex parser in rule_based_extractor.py. Indian lakh/
+# crore phrasing shows up in all sorts of forms ("1 Lakh", "2Lakhs" with no
+# space, "1.5 lakh", "between 1 and 2 lakh") and relying purely on the LLM's
+# own arithmetic for this, turn after turn, in a very long prompt, isn't
+# reliable — a missed or misread "lakh" silently produces a wrong or absent
+# budget filter. This regex re-derives min_price/max_price directly from the
+# raw message whenever a lakh/crore amount appears, as ground truth.
+_LAKH_CRORE_UNIT = r"(?:lakhs?|lacs?|crores?|cr\b)"
+_MONEY = rf"₹?\s*(\d+(?:\.\d+)?)\s*{_LAKH_CRORE_UNIT}"
+
+_LAKH_CRORE_RANGE = _re.compile(
+    rf"(?:between\s+)?{_MONEY}\s*(?:-|to|and)\s*{_MONEY}",
+    _re.IGNORECASE,
+)
+_LAKH_CRORE_UPPER = _re.compile(
+    rf"(?:under|below|max(?:imum)?|less\s+than|within|up\s*to)\s*{_MONEY}",
+    _re.IGNORECASE,
+)
+_LAKH_CRORE_LOWER = _re.compile(
+    rf"(?:above|at\s*least|more\s+than|min(?:imum)?|over)\s*{_MONEY}",
+    _re.IGNORECASE,
+)
+_LAKH_CRORE_BARE = _re.compile(_MONEY, _re.IGNORECASE)
+_CRORE_UNIT_CHECK = _re.compile(r"crores?|cr\b", _re.IGNORECASE)
+
+
+def _lakh_crore_to_rupees(amount_str: str, is_crore: bool) -> int:
+    value = float(amount_str)
+    return int(value * (10_000_000 if is_crore else 100_000))
+
+
+def _parse_lakh_crore_budget(raw_query: str):
+    """Returns (min_price, max_price) derived from lakh/crore phrasing in
+    raw_query, or (None, None) if no such phrasing is present."""
+    if not raw_query:
+        return None, None
+
+    m = _LAKH_CRORE_RANGE.search(raw_query)
+    if m:
+        full = m.group(0)
+        first_num, second_num = m.group(1), m.group(2)
+        # Determine unit per number by checking what immediately follows it.
+        first_is_crore = bool(_re.search(rf"{_re.escape(first_num)}\s*(?:crores?|cr\b)", full, _re.IGNORECASE))
+        second_is_crore = bool(_re.search(rf"{_re.escape(second_num)}\s*(?:crores?|cr\b)", full, _re.IGNORECASE))
+        lo = _lakh_crore_to_rupees(first_num, first_is_crore)
+        hi = _lakh_crore_to_rupees(second_num, second_is_crore)
+        return min(lo, hi), max(lo, hi)
+
+    m = _LAKH_CRORE_UPPER.search(raw_query)
+    if m:
+        is_crore = bool(_CRORE_UNIT_CHECK.search(m.group(0)))
+        return None, _lakh_crore_to_rupees(m.group(1), is_crore)
+
+    m = _LAKH_CRORE_LOWER.search(raw_query)
+    if m:
+        is_crore = bool(_CRORE_UNIT_CHECK.search(m.group(0)))
+        return _lakh_crore_to_rupees(m.group(1), is_crore), None
+
+    m = _LAKH_CRORE_BARE.search(raw_query)
+    if m:
+        # A bare "X lakh" with no qualifier — treat as an upper bound
+        # ("budget of X lakh"), same convention rule_based_extractor.py
+        # uses for a bare "under-implied" number.
+        is_crore = bool(_CRORE_UNIT_CHECK.search(m.group(0)))
+        return None, _lakh_crore_to_rupees(m.group(1), is_crore)
+
+    return None, None
 
 
 EXTRACTOR_SYSTEM_PROMPT = """
@@ -46,19 +117,19 @@ Return ONLY a valid JSON object with these exact keys:
   "near_metro": true or false or null,
   "tenant_type": "bachelor" or "family" or null,
   "owner_type": "owner" or "broker" or null,
-  "property_type": "residential" or "commercial" or "paid_guest" or "any" or null,
-  "apartment_type": "office" or "retail" or "shop" or "warehouse" or "showroom" or "co_working" or "godown" or null,
-  "rent_type": "monthly" or "lease" or null,
-  "lease_months": integer number of months (e.g. 6, 11, 24) or null
+  "propertyType": "residential" or "commercial" or "paid_guest" or "any" or null,
+  "apartmentType": "office" or "retail" or "shop" or "warehouse" or "showroom" or "co_working" or "godown" or null,
+  "rentType": "monthly" or "lease" or null,
+  "leaseMonths": integer number of months (e.g. 6, 11, 24) or null
 }
 
 LEASE RULES:
 - If the user says "lease property", "lease", "on lease", "fixed term", "long term lease" →
-  rent_type: "lease".
+  rentType: "lease".
 - If the user gives a specific duration ("11 month lease", "2 year lease", "24 months") →
-  set lease_months to that number of months (convert years to months, e.g. "2 year" → 24)
-  AND set rent_type: "lease".
-- If the user says "monthly rent", "month to month", "monthly" → rent_type: "monthly".
+  set leaseMonths to that number of months (convert years to months, e.g. "2 year" → 24)
+  AND set rentType: "lease".
+- If the user says "monthly rent", "month to month", "monthly" → rentType: "monthly".
 - If lease/rent-type isn't mentioned at all, return both as null — do NOT default to
   "monthly", since most listings are monthly and forcing this filter would wrongly
   exclude lease listings from generic searches.
@@ -72,7 +143,7 @@ PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
 - PAID_GUEST: user wants a PG/hostel-style stay for themselves. Signals: "pg",
   "hostel", "paying guest", "bachelor room", or the user identifies as a
   "college student" / "school student" and asks about a place to STAY.
-  IMPORTANT: if the user says "hostel", still return property_type: "paid_guest"
+  IMPORTANT: if the user says "hostel", still return propertyType: "paid_guest"
   (never "residential") — that is the correct DB category for that need.
 - RESIDENTIAL: user clearly wants a home to live in: "flat", "apartment", "house",
   "villa", "bhk", "family", or a student who explicitly says "apartment"/"flat"
@@ -82,47 +153,47 @@ PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
   paid_guest signals, and vice versa.
 - DEFAULT TO RESIDENTIAL: Most users on this platform are searching for a
   home to live in. If the message has NO type signal at all (no shop/office/
-  commercial signal, no pg/hostel signal) and no property_type was set in a
-  previous turn, return property_type: "residential" — do NOT return null.
+  commercial signal, no pg/hostel signal) and no propertyType was set in a
+  previous turn, return propertyType: "residential" — do NOT return null.
   Only return "commercial" or "paid_guest" when the user gives an actual
   positive signal for one of those (see rules above). Carry forward a type
   already established earlier in the conversation if the topic hasn't changed.
 - If the user explicitly switches type mid-conversation (e.g. "actually I need
   a shop instead") — override to the new type immediately.
 
-COMMERCIAL SUB-TYPE RULES — apartment_type (BE CLEVER, DON'T JUST KEYWORD-MATCH):
-  Once property_type is "commercial", figure out the SPECIFIC kind of commercial
+COMMERCIAL SUB-TYPE RULES — apartmentType (BE CLEVER, DON'T JUST KEYWORD-MATCH):
+  Once propertyType is "commercial", figure out the SPECIFIC kind of commercial
   space the user is actually running/needs, from the whole sentence:
   - "office", "office space", "workspace", "co-working", "coworking", "cabin",
-    "corporate space", "for my company/startup/team" → apartment_type: "office"
-    (note: "co-working"/"coworking" specifically → apartment_type: "co_working")
+    "corporate space", "for my company/startup/team" → apartmentType: "office"
+    (note: "co-working"/"coworking" specifically → apartmentType: "co_working")
   - "shop", "retail space", "retail shop", "store", "boutique", "outlet",
-    "for my business/store" (retail-flavored) → apartment_type: "retail"
+    "for my business/store" (retail-flavored) → apartmentType: "retail"
     (a bare "shop" with no other cue → "retail"; a bare "shop" is retail, not office)
   - "warehouse", "godown", "storage space", "logistics space" →
-    apartment_type: "warehouse" (or "godown" if the user says "godown" specifically)
-  - "showroom", "display space" → apartment_type: "showroom"
+    apartmentType: "warehouse" (or "godown" if the user says "godown" specifically)
+  - "showroom", "display space" → apartmentType: "showroom"
   - If the user just says "commercial space"/"commercial property" generically,
-    with NO sub-type signal → apartment_type: null (don't guess a sub-type they
+    with NO sub-type signal → apartmentType: null (don't guess a sub-type they
     didn't imply — this broadens rather than narrows the search).
-  - apartment_type only ever applies when property_type is "commercial" — never
+  - apartmentType only ever applies when propertyType is "commercial" — never
     set it for residential/paid_guest/any.
   - If the user switches sub-type mid-conversation ("actually I need an office,
-    not a shop") — override apartment_type to the new one immediately.
+    not a shop") — override apartmentType to the new one immediately.
   - If the message uses a generic word ("commercial property", "any commercial
-    space") with no sub-type signal, return apartment_type: null even if a
-    sub-type was set earlier — same broadening logic as the property_type rule
+    space") with no sub-type signal, return apartmentType: null even if a
+    sub-type was set earlier — same broadening logic as the propertyType rule
     above.
 - GENERIC PROPERTY WORDS — don't let a stale type silently hide real matches:
   If the message uses a GENERIC word for what they want — "property",
   "properties", "place", "option", "listing" — with NO specific type signal
   anywhere in that same message (no pg/hostel/shop/office/flat/bhk/house/etc.),
   this means the user is deliberately broadening the search, not continuing
-  the narrower one. Return property_type: "any" (do NOT carry forward or
+  the narrower one. Return propertyType: "any" (do NOT carry forward or
   default to whatever type was established earlier in the conversation).
   Example: earlier turns were about a PG, then the user says "can I get the
   property from Mumbai" — that's a generic word with no PG signal, so
-  property_type: "any", even though "paid_guest" was set before.
+  propertyType: "any", even though "paid_guest" was set before.
   Only keep the earlier type when the message has NO property-related word at
   all (e.g. just a location name or a bare filter like "under 10k") — in that
   case the established type context still applies.
@@ -149,7 +220,7 @@ GENERAL RULES:
 - If user explicitly mentions a NEW location or area — ALWAYS override previous location with the new one
 - If user says "any", "anything", "all", "whatever is available" — open search.
   Set bhk, min_price, max_price, min_sqft, max_sqft, furnished, near_metro,
-  tenant_type all to null, AND property_type: "any" (don't leave a stale type
+  tenant_type all to null, AND propertyType: "any" (don't leave a stale type
   from earlier in the conversation scoping an "anything available" request).
   Keep location if mentioned.
 - If user says "cheaper" / "less budget" — lower max_price from previous context by 20-30%
@@ -217,10 +288,10 @@ class SearchFilters(BaseModel):
     near_metro:      Optional[bool] = None
     tenant_type:     Optional[str]  = None
     owner_type:      Optional[str]  = None
-    property_type:   Optional[str]  = "residential"
-    apartment_type:  Optional[str]  = None
-    rent_type:       Optional[str]  = None
-    lease_months:    Optional[int]  = None
+    propertyType:    Optional[str]  = None
+    apartmentType:   Optional[str]  = None
+    rentType:        Optional[str]  = None
+    leaseMonths:     Optional[int]  = None
 
     @field_validator("location", mode="before")
     @classmethod
@@ -313,7 +384,7 @@ class SearchFilters(BaseModel):
     def _clean_owner_type(cls, v):
         return v if v in ("owner", "broker") else None
 
-    @field_validator("rent_type", mode="before")
+    @field_validator("rentType", mode="before")
     @classmethod
     def _clean_rent_type(cls, v):
         if not isinstance(v, str):
@@ -321,7 +392,7 @@ class SearchFilters(BaseModel):
         v = v.strip().lower()
         return v if v in ("monthly", "lease") else None
 
-    @field_validator("lease_months", mode="before")
+    @field_validator("leaseMonths", mode="before")
     @classmethod
     def _clean_lease_months(cls, v):
         if isinstance(v, bool) or not isinstance(v, (int, float)):
@@ -329,7 +400,7 @@ class SearchFilters(BaseModel):
         v = int(v)
         return v if 1 <= v <= 120 else None
 
-    @field_validator("property_type", mode="before")
+    @field_validator("propertyType", mode="before")
     @classmethod
     def _clean_property_type(cls, v):
         if not isinstance(v, str):
@@ -349,10 +420,10 @@ class SearchFilters(BaseModel):
         }
         mapped = synonyms.get(normalized)
         if not mapped and normalized:
-            print(f"[HybridExtractor] Unrecognized property_type from LLM: '{v}' — filter not applied.")
+            print(f"[HybridExtractor] Unrecognized propertyType from LLM: '{v}' — filter not applied.")
         return mapped
 
-    @field_validator("apartment_type", mode="before")
+    @field_validator("apartmentType", mode="before")
     @classmethod
     def _clean_apartment_type(cls, v):
         if not isinstance(v, str):
@@ -389,10 +460,22 @@ class SearchFilters(BaseModel):
         min_price/max_price (a fresh single-ended price like "under 8k"
         clears a previously-set price on the other end, so it doesn't
         silently AND with a stale bound from earlier in the conversation
-        and produce an impossible range); property_type always defaults
+        and produce an impossible range); propertyType always defaults
         to residential."""
         prev = previous or {}
         data = self.model_dump()
+
+        # Deterministic backstop: if THIS message contains explicit lakh/
+        # crore phrasing, trust the regex-parsed rupee amount over whatever
+        # the LLM extracted for min_price/max_price — see
+        # _parse_lakh_crore_budget for why. Only overrides when the pattern
+        # actually matched (so messages with no lakh/crore wording are
+        # completely unaffected and keep the LLM's own price extraction).
+        lakh_crore_min, lakh_crore_max = _parse_lakh_crore_budget(raw_query)
+        if lakh_crore_min is not None or lakh_crore_max is not None:
+            data["min_price"] = lakh_crore_min
+            data["max_price"] = lakh_crore_max
+
         location_just_set   = data["location"] is not None
         expand_just_set      = data["location_expand"] is not None
         min_sqft_just_set    = data["min_sqft"] is not None
@@ -416,8 +499,8 @@ class SearchFilters(BaseModel):
                     continue
                 data[key] = prev[key]
 
-        if data["property_type"] is None:
-            data["property_type"] = "residential"
+        if data["propertyType"] is None:
+            data["propertyType"] = "residential"
 
         # Deterministic backstop: if the LLM didn't explicitly broaden to
         # "any" itself, but THIS message plainly uses a generic word
@@ -430,15 +513,15 @@ class SearchFilters(BaseModel):
             and _GENERIC_PROPERTY_WORDS.search(raw_query)
             and not _TYPE_SIGNAL_WORDS.search(raw_query)
         ):
-            data["property_type"] = "any"
+            data["propertyType"] = "any"
 
-        # apartment_type (office/retail/shop/warehouse/showroom/co_working)
+        # apartmentType (office/retail/shop/warehouse/showroom/co_working)
         # only ever makes sense for commercial listings — if the resolved
-        # property_type isn't "commercial" (switched to residential/pg/any,
+        # propertyType isn't "commercial" (switched to residential/pg/any,
         # or broadened), drop any carried-forward sub-type so it can't
         # silently scope an unrelated search.
-        if data["property_type"] != "commercial":
-            data["apartment_type"] = None
+        if data["propertyType"] != "commercial":
+            data["apartmentType"] = None
 
         return SearchFilters(**data)
 

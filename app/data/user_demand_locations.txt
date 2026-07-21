@@ -180,4 +180,3 @@
 [2026-07-15 11:05:15] Location: Ashok Nagar | Query: i want residential property from ashok nagar
 [2026-07-15 11:09:44] Location: Ashok Nagar | Query: i want residential property from ashok nagar
 [2026-07-17 05:50:23] Location: Chennai | Query: i want apartment only not house
-[2026-07-21 07:28:31] Location: Kk Nagar | Query: the above one is 5 Lakh but i want below 2 Lakhs

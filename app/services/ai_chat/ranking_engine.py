@@ -75,12 +75,12 @@ class RankingEngine:
 
                 and
 
-                property_item.get("price")
+                property_item.get("monthlyRent")
             ):
 
                 if (
 
-                    property_item["price"]
+                    property_item["monthlyRent"]
 
                     <=
 
@@ -104,12 +104,12 @@ class RankingEngine:
 
                 and
 
-                property_item.get("price")
+                property_item.get("monthlyRent")
             ):
 
                 if (
 
-                    property_item["price"]
+                    property_item["monthlyRent"]
 
                     >=
 

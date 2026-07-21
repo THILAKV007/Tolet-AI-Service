@@ -98,7 +98,7 @@ class HistoryBuilder:
                         posted_by_label = raw_posted_by.replace("_", " ") or "N/A"
                     # ─────────────────────────────────────────────────────────
 
-                    is_pg = (p.get("property_type") or "").lower() == "paid_guest"
+                    is_pg = (p.get("propertyType") or "").lower() == "paid_guest"
 
                     # Build core block; for PG, swap BHK/sqft for PG-specific fields
                     pg_fields = (
@@ -114,7 +114,7 @@ class HistoryBuilder:
                         f"- Title: {p.get('title')}\n"
                         f"  Location: {p.get('locality') or p.get('location')}, {p.get('city')}\n"
                         f"  Price: {format_price(p)}\n"
-                        f"  Property type: {p.get('property_type')}\n"
+                        f"  Property type: {p.get('propertyType')}\n"
                         + pg_fields
                         + f"  Furnished: {p.get('furnished')}\n"
                         f"  Floor: {p.get('floor')}/{p.get('total_floors')}\n"
@@ -147,7 +147,7 @@ class HistoryBuilder:
                     else:
                         posted_by_label = raw_posted_by.replace("_", " ") or "N/A"
 
-                    prop_type = (p.get("property_type") or "").lower()
+                    prop_type = (p.get("propertyType") or "").lower()
 
                     # Build the size/config field based on property type
                     # so the AI never sees "NoneHK" or "None BHK" for PG/commercial

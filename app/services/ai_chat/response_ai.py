@@ -135,8 +135,8 @@ class ResponseAI:
             return True  # nothing to check against
 
         valid_prices = {
-            p.get("price") for p in (properties or [])
-            if isinstance(p.get("price"), (int, float)) and p.get("price")
+            p.get("monthlyRent") for p in (properties or [])
+            if isinstance(p.get("monthlyRent"), (int, float)) and p.get("monthlyRent")
         }
         # If the model quoted at least one price and NONE of them match a
         # real property's price, the reply is ungrounded (hallucinated).
@@ -225,7 +225,7 @@ class ResponseAI:
         lines = ["Here's what I found for you, straight from our listings:"]
         for p in properties[:3]:
             loc     = p.get("location") or p.get("locality") or p.get("city") or "an area nearby"
-            ptype   = (p.get("property_type") or "").replace("_", " ")
+            ptype   = (p.get("propertyType") or "").replace("_", " ")
             posted  = "direct owner" if p.get("posted_by") == "direct_owner" else "broker-listed"
             price_str = format_price(p)
             lines.append(f"- {ptype.title() or 'Property'} in {loc} — {price_str} ({posted})")

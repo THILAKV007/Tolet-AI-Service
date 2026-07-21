@@ -196,7 +196,7 @@ class ChatService:
           Task A — direct property search for the exact location
           Task B — geo expansion to find nearby localities
 
-        hard_type_filters (e.g. {"property_type": "paid_guest"}) is applied to
+        hard_type_filters (e.g. {"propertyType": "paid_guest"}) is applied to
         the direct search too — otherwise "does this location have listings?"
         would say yes just because SOME other property type exists there,
         even when the type the user actually asked for (PG/commercial/
@@ -457,8 +457,8 @@ class ChatService:
                 ),
                 "near_metro":  ("metro",),
                 "furnished":   ("furnished",),
-                "rent_type":   ("lease", "monthly", "month to month"),
-                "apartment_type": (
+                "rentType":   ("lease", "monthly", "month to month"),
+                "apartmentType": (
                     "office", "workspace", "co-working", "coworking",
                     "retail", "shop", "store", "showroom", "warehouse", "godown",
                 ),
@@ -484,9 +484,9 @@ class ChatService:
             if filters.get("max_price") and not has_digit:
                 print(f"[ChatService] Dropping stale max_price '{filters['max_price']}' — no number in this message.")
                 filters["max_price"] = None
-            if filters.get("lease_months") and not has_digit:
-                print(f"[ChatService] Dropping stale lease_months '{filters['lease_months']}' — no number in this message.")
-                filters["lease_months"] = None
+            if filters.get("leaseMonths") and not has_digit:
+                print(f"[ChatService] Dropping stale leaseMonths '{filters['leaseMonths']}' — no number in this message.")
+                filters["leaseMonths"] = None
 
         # Capture what the user actually typed/meant as the location BEFORE
         # geo-expansion (below) can null out filters["location"] or swap it
@@ -579,8 +579,8 @@ class ChatService:
             parallel = self._geo_expand_parallel(
                 filters["location"],
                 all_localities,
-                hard_type_filters={"property_type": filters["property_type"]}
-                if filters.get("property_type") else None,
+                hard_type_filters={"propertyType": filters["propertyType"]}
+                if filters.get("propertyType") else None,
                 city_hint=city_hint,
                 state_hint=state_hint,
             )
@@ -644,14 +644,14 @@ class ChatService:
         if intent in {"property_search", "refilter"}:
             has_location = bool(filters.get("location") or filters.get("location_expand"))
             has_budget   = bool(filters.get("max_price") or filters.get("min_price"))
-            # NOTE: property_type now defaults to "residential" even when the
+            # NOTE: propertyType now defaults to "residential" even when the
             # user gave no type signal at all (see hybrid_extractor.py), so it
             # can no longer be used as a proxy for "the user said something
             # specific". Only count it here when it's an explicit non-default
             # signal (commercial / paid_guest) that the user actually stated.
             has_signal   = bool(
                 filters.get("bhk") or
-                filters.get("property_type") in ("commercial", "paid_guest") or
+                filters.get("propertyType") in ("commercial", "paid_guest") or
                 filters.get("furnished") or filters.get("tenant_type")
             )
             query_lower_check = cleaned_query.lower()
@@ -750,13 +750,13 @@ class ChatService:
                 # If geo expanded but fewer than 3 results, retry with
                 # relaxed filters (drop bhk / price / furnished constraints)
                 # so the user always sees at least 3 nearby properties when they exist.
-                # NOTE: property_type is NEVER relaxed — a PG search must never
+                # NOTE: propertyType is NEVER relaxed — a PG search must never
                 # get padded with residential/commercial listings, and vice versa.
                 GEO_MIN_PROPS = 3
                 if len(ranked_properties) < GEO_MIN_PROPS:
                     relaxed_filters = {
                         k: v for k, v in filters.items()
-                        if k in ("location_expand", "_geo_dist_lookup", "property_type")
+                        if k in ("location_expand", "_geo_dist_lookup", "propertyType")
                     }
                     relaxed_props = self.property_service.search(relaxed_filters)
                     relaxed_props = self._filter_by_location_match(
@@ -862,7 +862,7 @@ class ChatService:
                 # matched set ('properties', before ranking/display
                 # truncation) rather than scoping to any single area, so the
                 # count reflects true total supply matching this search
-                # (property_type, etc.) across every location, not just the
+                # (propertyType, etc.) across every location, not just the
                 # locations of the properties shown on screen.
                 for prop in properties:
                     posted_by = (prop.get("posted_by") or "").strip().lower()

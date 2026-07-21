@@ -268,13 +268,13 @@ class PropertyDBService:
         # usually paid upfront for the whole leaseMonths period). A user
         # asking "I want lease property" should only see rentType="lease"
         # listings, optionally narrowed further by leaseMonths.
-        rent_type = filters.get("rent_type")
-        if rent_type:
-            query["rentType"] = {"$regex": f"^{re.escape(rent_type)}$", "$options": "i"}
+        rentType = filters.get("rentType")
+        if rentType:
+            query["rentType"] = {"$regex": f"^{re.escape(rentType)}$", "$options": "i"}
 
-        lease_months = filters.get("lease_months")
-        if lease_months:
-            query["leaseMonths"] = int(lease_months)
+        leaseMonths = filters.get("leaseMonths")
+        if leaseMonths:
+            query["leaseMonths"] = int(leaseMonths)
 
         tenant_type = filters.get("tenant_type")
         if tenant_type == "bachelor":
@@ -310,24 +310,24 @@ class PropertyDBService:
         # If the user's intent is clearly one of these (shop/office/workspace →
         # commercial, pg/hostel/student-stay → paid_guest, flat/bhk/house →
         # residential), NEVER let another type leak into the results.
-        property_type = filters.get("property_type")
-        if property_type in ("residential", "commercial", "paid_guest"):
+        propertyType = filters.get("propertyType")
+        if propertyType in ("residential", "commercial", "paid_guest"):
             query["propertyType"] = {
-                "$regex":   f"^{re.escape(property_type)}$",
+                "$regex":   f"^{re.escape(propertyType)}$",
                 "$options": "i"
             }
 
         # ── Commercial sub-type isolation ────────────────────────────────────
         # apartmentType stores the specific kind of commercial space (e.g.
         # "retail", "office", "warehouse"). Only ever applied alongside
-        # property_type="commercial" (enforced upstream in SearchFilters), so
+        # propertyType="commercial" (enforced upstream in SearchFilters), so
         # a user asking for "office space" doesn't get shown retail/warehouse
         # listings and vice versa. Regex substring match (not anchored) since
         # the DB may store richer strings like "Retail Space".
-        apartment_type = filters.get("apartment_type")
-        if apartment_type:
+        apartmentType = filters.get("apartmentType")
+        if apartmentType:
             query["apartmentType"] = {
-                "$regex":   re.escape(apartment_type),
+                "$regex":   re.escape(apartmentType),
                 "$options": "i"
             }
 
@@ -395,11 +395,11 @@ class PropertyDBService:
             "city":               doc.get("city", ""),
             "locality":           doc.get("locality", ""),
             "state":              doc.get("state", ""),
-            "price":              doc.get("monthlyRent", 0),
+            "monthlyRent":        doc.get("monthlyRent", 0),
             "bhk":                bhk_num,
             "furnished":          doc.get("furnishedType", ""),
-            "property_type":      prop_type,
-            "apartment_type":     apt_type,
+            "propertyType":       prop_type,
+            "apartmentType":      apt_type,
             "near_metro":         near_metro,
             "bachelor_friendly":  bachelor_friendly,
             "family_friendly":    family_friendly,
@@ -432,8 +432,8 @@ class PropertyDBService:
             "payment_via":        (doc.get("paidRentalVia") or "").strip(),
             # ── Lease-specific fields ───────────────────────────────────────────
             # e.g. rentType: "monthly" / "lease"; leaseMonths: 11, 24, etc.
-            "rent_type":          (doc.get("rentType") or "").strip(),
-            "lease_months":       doc.get("leaseMonths"),
+            "rentType":           (doc.get("rentType") or "").strip(),
+            "leaseMonths":        doc.get("leaseMonths"),
         }
 
     # =========================================================================
