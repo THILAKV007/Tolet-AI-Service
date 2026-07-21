@@ -1,9 +1,27 @@
 import os
 import json
+import random
 from dotenv import load_dotenv
 from openai import OpenAI, AsyncOpenAI
 
 load_dotenv()
+
+# ── Varied failure messages ─────────────────────────────────────────────────
+# Previously every LLM failure (timeout, API error, empty response) returned
+# the exact same hardcoded "I'm having trouble processing your request right
+# now." string, every single time — which reads as robotic and repetitive to
+# a user who hits it more than once. Pick a fresh one from this pool instead.
+_CONNECTION_FAILURE_MESSAGES = [
+    "I unfortunately can't connect right now — could you try that again in a moment?",
+    "Looks like I'm having a connection hiccup on my end — mind trying again?",
+    "I'm not able to reach my systems right now — please try again shortly.",
+    "Something's interrupting my connection at the moment — one more try should help.",
+    "I couldn't get through on my end just now — give it another shot in a bit.",
+]
+
+
+def _random_connection_failure_message() -> str:
+    return random.choice(_CONNECTION_FAILURE_MESSAGES)
 
 # Every call to OpenRouter/DeepSeek was previously made with NO timeout at
 # all, meaning a slow upstream response could hang a request indefinitely.
@@ -119,11 +137,11 @@ class LLMClient:
                 max_tokens=max_tokens
             )
             content = response.choices[0].message.content
-            return content if content is not None else "I'm having trouble processing your request right now."
+            return content if content is not None else _random_connection_failure_message()
 
         except Exception as e:
             print(f"[LLMClient] chat error: {e}")
-            return "I'm having trouble processing your request right now."
+            return _random_connection_failure_message()
 
 
     def chat_with_history(
@@ -145,11 +163,11 @@ class LLMClient:
                 max_tokens=max_tokens
             )
             content = response.choices[0].message.content
-            return content if content is not None else "I'm having trouble processing your request right now."
+            return content if content is not None else _random_connection_failure_message()
 
         except Exception as e:
             print(f"[LLMClient] chat_with_history error: {e}")
-            return "I'm having trouble processing your request right now."
+            return _random_connection_failure_message()
 
 
     def chat_json(

@@ -3,6 +3,30 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import re as _re
 
+# ── Deterministic safety net for the "generic property word" broadening rule ──
+# The system prompt tells the LLM to return property_type: "any" when the
+# user's message uses a generic word ("property", "listing", etc.) with NO
+# specific residential/commercial/PG signal — e.g. "can I get the lease
+# property". That's a whole-sentence judgment call buried in a very long
+# prompt, and in practice the LLM doesn't always catch it — when it returns
+# null instead of "any", merge_with_previous()'s own fallback silently
+# defaults property_type to "residential", which can wrongly hide real
+# commercial/PG listings that match everything else the user asked for
+# (e.g. a lease query where the only lease listing is commercial). This
+# regex check re-derives the same rule directly from the raw message as a
+# backstop, independent of what the LLM decided.
+_GENERIC_PROPERTY_WORDS = _re.compile(
+    r"\b(propert(?:y|ies)|place|option|options|listing|listings)\b",
+    _re.IGNORECASE,
+)
+_TYPE_SIGNAL_WORDS = _re.compile(
+    r"\b(flat|apartment|house|villa|bhk|\d\s*rk|studio|family|"
+    r"pg|hostel|paying\s*guest|bachelor\s*room|"
+    r"shop|office|workspace|co-?working|godown|warehouse|showroom|retail|"
+    r"commercial|business|store|clinic)\b",
+    _re.IGNORECASE,
+)
+
 
 EXTRACTOR_SYSTEM_PROMPT = """
 You are a filter extractor for Tolet.ai — a rental property platform in India.
@@ -23,6 +47,7 @@ Return ONLY a valid JSON object with these exact keys:
   "tenant_type": "bachelor" or "family" or null,
   "owner_type": "owner" or "broker" or null,
   "property_type": "residential" or "commercial" or "paid_guest" or "any" or null,
+  "apartment_type": "office" or "retail" or "shop" or "warehouse" or "showroom" or "co_working" or "godown" or null,
   "rent_type": "monthly" or "lease" or null,
   "lease_months": integer number of months (e.g. 6, 11, 24) or null
 }
@@ -64,6 +89,30 @@ PROPERTY TYPE RULES — READ THE USER'S MOTIVE, NOT JUST KEYWORDS:
   already established earlier in the conversation if the topic hasn't changed.
 - If the user explicitly switches type mid-conversation (e.g. "actually I need
   a shop instead") — override to the new type immediately.
+
+COMMERCIAL SUB-TYPE RULES — apartment_type (BE CLEVER, DON'T JUST KEYWORD-MATCH):
+  Once property_type is "commercial", figure out the SPECIFIC kind of commercial
+  space the user is actually running/needs, from the whole sentence:
+  - "office", "office space", "workspace", "co-working", "coworking", "cabin",
+    "corporate space", "for my company/startup/team" → apartment_type: "office"
+    (note: "co-working"/"coworking" specifically → apartment_type: "co_working")
+  - "shop", "retail space", "retail shop", "store", "boutique", "outlet",
+    "for my business/store" (retail-flavored) → apartment_type: "retail"
+    (a bare "shop" with no other cue → "retail"; a bare "shop" is retail, not office)
+  - "warehouse", "godown", "storage space", "logistics space" →
+    apartment_type: "warehouse" (or "godown" if the user says "godown" specifically)
+  - "showroom", "display space" → apartment_type: "showroom"
+  - If the user just says "commercial space"/"commercial property" generically,
+    with NO sub-type signal → apartment_type: null (don't guess a sub-type they
+    didn't imply — this broadens rather than narrows the search).
+  - apartment_type only ever applies when property_type is "commercial" — never
+    set it for residential/paid_guest/any.
+  - If the user switches sub-type mid-conversation ("actually I need an office,
+    not a shop") — override apartment_type to the new one immediately.
+  - If the message uses a generic word ("commercial property", "any commercial
+    space") with no sub-type signal, return apartment_type: null even if a
+    sub-type was set earlier — same broadening logic as the property_type rule
+    above.
 - GENERIC PROPERTY WORDS — don't let a stale type silently hide real matches:
   If the message uses a GENERIC word for what they want — "property",
   "properties", "place", "option", "listing" — with NO specific type signal
@@ -169,6 +218,7 @@ class SearchFilters(BaseModel):
     tenant_type:     Optional[str]  = None
     owner_type:      Optional[str]  = None
     property_type:   Optional[str]  = "residential"
+    apartment_type:  Optional[str]  = None
     rent_type:       Optional[str]  = None
     lease_months:    Optional[int]  = None
 
@@ -302,7 +352,33 @@ class SearchFilters(BaseModel):
             print(f"[HybridExtractor] Unrecognized property_type from LLM: '{v}' — filter not applied.")
         return mapped
 
-    def merge_with_previous(self, previous: Optional[dict]) -> "SearchFilters":
+    @field_validator("apartment_type", mode="before")
+    @classmethod
+    def _clean_apartment_type(cls, v):
+        if not isinstance(v, str):
+            return None
+        normalized = v.strip().lower().replace(" ", "_").replace("-", "_")
+        synonyms = {
+            "office":       "office",
+            "office_space": "office",
+            "workspace":    "office",
+            "co_working":   "co_working",
+            "coworking":    "co_working",
+            "retail":       "retail",
+            "retail_space": "retail",
+            "shop":         "retail",
+            "store":        "retail",
+            "showroom":     "showroom",
+            "warehouse":    "warehouse",
+            "godown":       "godown",
+        }
+        return synonyms.get(normalized)
+
+    def merge_with_previous(
+        self,
+        previous: Optional[dict],
+        raw_query: str = "",
+    ) -> "SearchFilters":
         """Carry forward any field this turn didn't set, same precedence
         rules as before: a fresh location_expand clears location and
         vice versa; a fresh min_sqft/max_sqft clears the OTHER sqft bound
@@ -343,6 +419,27 @@ class SearchFilters(BaseModel):
         if data["property_type"] is None:
             data["property_type"] = "residential"
 
+        # Deterministic backstop: if the LLM didn't explicitly broaden to
+        # "any" itself, but THIS message plainly uses a generic word
+        # ("property", "listing", etc.) with no residential/commercial/PG
+        # signal anywhere in it, override the "residential" fallback above
+        # to "any" — see _GENERIC_PROPERTY_WORDS comment for why this can't
+        # be left to the LLM alone.
+        if (
+            raw_query
+            and _GENERIC_PROPERTY_WORDS.search(raw_query)
+            and not _TYPE_SIGNAL_WORDS.search(raw_query)
+        ):
+            data["property_type"] = "any"
+
+        # apartment_type (office/retail/shop/warehouse/showroom/co_working)
+        # only ever makes sense for commercial listings — if the resolved
+        # property_type isn't "commercial" (switched to residential/pg/any,
+        # or broadened), drop any carried-forward sub-type so it can't
+        # silently scope an unrelated search.
+        if data["property_type"] != "commercial":
+            data["apartment_type"] = None
+
         return SearchFilters(**data)
 
 
@@ -379,9 +476,9 @@ Extract the rental filters as JSON.
             max_tokens=1200
         )
 
-        return self._validate(result, previous_filters)
+        return self._validate(result, previous_filters, raw_query=query)
 
-    def _validate(self, extracted, previous_filters: dict = None) -> dict:
+    def _validate(self, extracted, previous_filters: dict = None, raw_query: str = "") -> dict:
         # GUARD: chat_json is expected to return a dict, but if the LLM ever
         # returns malformed JSON (e.g. a bare list/string that still parses
         # as valid JSON), extracted.get(...) below would throw an unhandled
@@ -397,7 +494,7 @@ Extract the rental filters as JSON.
             print(f"[HybridExtractor] SearchFilters validation error: {e} — falling back to empty filters.")
             filters = SearchFilters()
 
-        merged = filters.merge_with_previous(previous_filters)
+        merged = filters.merge_with_previous(previous_filters, raw_query=raw_query)
         return merged.model_dump()
 
     def _format_history(self, history: list) -> str:

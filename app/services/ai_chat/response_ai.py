@@ -1,9 +1,11 @@
-from services.llm.llm_client import LLMClient
+from services.llm.llm_client import LLMClient, _random_connection_failure_message
 from services.llm.prompts import RESPONSE_SYSTEM_PROMPT
 from services.ai_chat.history_builder import HistoryBuilder
+from services.ai_chat.price_formatter import format_price
 from services.geo.spell_corrector import _CHENNAI_REFERENCE_LOCALITIES, _CITY_STATE_REFERENCE
 
 import re
+import random
 
 
 def _language_instruction(language: str) -> str:
@@ -212,19 +214,20 @@ class ResponseAI:
     # =========================================================================
     def _build_fallback_response(self, properties: list) -> str:
         if not properties:
-            return (
-                "I couldn't find any listings matching that search right now. "
-                "Feel free to try a different area, budget, or property type — "
-                "I'm happy to take another look."
-            )
+            return random.choice([
+                "I couldn't find any listings matching that search right now. Feel free to try a different area, budget, or property type — I'm happy to take another look.",
+                "No matches on that one just yet — want to try a nearby area, a different budget, or another property type?",
+                "Nothing's turning up for that exact search right now. A different locality, budget, or property type might help — happy to look again.",
+                "I'm coming up empty on that search at the moment. Try adjusting the area, budget, or property type and I'll take another pass.",
+                "That search isn't matching anything right now — let's tweak the area, budget, or property type and give it another shot.",
+            ])
 
         lines = ["Here's what I found for you, straight from our listings:"]
         for p in properties[:3]:
             loc     = p.get("location") or p.get("locality") or p.get("city") or "an area nearby"
-            price   = p.get("price")
             ptype   = (p.get("property_type") or "").replace("_", " ")
             posted  = "direct owner" if p.get("posted_by") == "direct_owner" else "broker-listed"
-            price_str = f"₹{price:,}/month" if price else "price on request"
+            price_str = format_price(p)
             lines.append(f"- {ptype.title() or 'Property'} in {loc} — {price_str} ({posted})")
         lines.append("Want more details on any of these, or should I narrow it down further?")
         return "\n".join(lines)
@@ -311,10 +314,7 @@ class ResponseAI:
 
         except Exception as e:
             print(f"[ResponseAI] generate error: {e}")
-            return (
-                "Something tripped up on my end — "
-                "mind rephrasing that?"
-            )
+            return _random_connection_failure_message()
 
 
     def generate_clarification(
@@ -372,10 +372,11 @@ Rules:
 
         except Exception as e:
             print(f"[ResponseAI] generate_clarification error: {e}")
-            return (
-                "Got it! Which area are you looking in, and do you have "
-                "a budget in mind?"
-            )
+            return random.choice([
+                "Got it! Which area are you looking in, and do you have a budget in mind?",
+                "Sure — which area should I search, and what's your budget looking like?",
+                "Happy to help! What area are you considering, and any budget range in mind?",
+            ])
 
 
     def generate_knowledge_response(
@@ -416,7 +417,8 @@ Minimum 3 lines. Never robotic or repetitive.
             )
 
         except Exception:
-            return (
-                "Tolet AI helps you find rental homes across India — "
-                "just tell me what you're looking for!"
-            )
+            return random.choice([
+                "Tolet AI helps you find rental homes across India — just tell me what you're looking for!",
+                "I'm Tolet AI, your rental search assistant for India — let me know what you need and I'll help.",
+                "I help match renters with homes across India — tell me your area and property type to get started!",
+            ])

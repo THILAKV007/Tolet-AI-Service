@@ -1,4 +1,5 @@
 from services.llm.prompts import RESPONSE_SYSTEM_PROMPT
+from services.ai_chat.price_formatter import format_price
 
 
 class HistoryBuilder:
@@ -112,7 +113,7 @@ class HistoryBuilder:
                     prop_text += (
                         f"- Title: {p.get('title')}\n"
                         f"  Location: {p.get('locality') or p.get('location')}, {p.get('city')}\n"
-                        f"  Price: ₹{p.get('price')}/month\n"
+                        f"  Price: {format_price(p)}\n"
                         f"  Property type: {p.get('property_type')}\n"
                         + pg_fields
                         + f"  Furnished: {p.get('furnished')}\n"
@@ -170,7 +171,7 @@ class HistoryBuilder:
 
                     prop_text += (
                         f"- {p.get('title')} | {p.get('location')} | "
-                        f"₹{p.get('price')}/month | {size_info} | "
+                        f"{format_price(p)} | {size_info} | "
                         f"{p.get('furnished')} | "
                         f"Metro: {p.get('near_metro')} | "
                         f"Bachelor: {p.get('bachelor_friendly')} | "

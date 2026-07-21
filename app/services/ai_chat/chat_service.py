@@ -377,12 +377,31 @@ class ChatService:
         # detected language, with NO further LLM calls.
         # =====================================================================
         if intent == "greeting":
+            # Randomized per call (not a single fixed template) so repeated
+            # "hi"s in testing/demoing don't all get the identical reply —
+            # still a single templated line each time (no LLM call), just
+            # picked from a pool instead of one hardcoded string.
             greetings_by_language = {
-                "tamil":    "வணக்கம்! நான் Tolet AI. உங்களுக்கு எந்த பகுதியில், எந்த மாதிரியான வீடு தேவை?",
-                "tanglish": "Vanakkam! Naan Tolet AI. Neenga etha area la, etha type property venum sollunga?",
-                "english":  "Hi there! I'm Tolet AI. Tell me the area and the kind of property you're looking for, and I'll find some options.",
+                "tamil": [
+                    "வணக்கம்! நான் Tolet AI. உங்களுக்கு எந்த பகுதியில், எந்த மாதிரியான வீடு தேவை?",
+                    "வணக்கம்! நான் Tolet AI — உங்களுக்கு தேவையான பகுதி மற்றும் சொத்து வகையை சொல்லுங்கள், நான் தேடித் தருகிறேன்.",
+                    "ஹாய்! Tolet AI இங்கே. எந்த ஏரியா, என்ன மாதிரி property தேடுறீங்க?",
+                ],
+                "tanglish": [
+                    "Vanakkam! Naan Tolet AI. Neenga etha area la, etha type property venum sollunga?",
+                    "Hi! Tolet AI here — enna area, enna type property (flat/pg/shop) venum sollunga, naan find pannuren.",
+                    "Vanga! Naan Tolet AI. Area and property type sollunga, ready ah options kaatren.",
+                ],
+                "english": [
+                    "Hi there! I'm Tolet AI — tell me the area and the kind of property you're looking for, and I'll find some options.",
+                    "Hey! I'm Tolet AI. Let me know the area and property type you have in mind, and I'll pull up listings.",
+                    "Hello! Tolet AI here — share the location and what kind of place you need, and I'll get searching.",
+                    "Hi! I'm Tolet AI, here to help you find a rental. What area and property type are you looking for?",
+                ],
             }
-            ai_response = greetings_by_language.get(detected_language, greetings_by_language["english"])
+            ai_response = random.choice(
+                greetings_by_language.get(detected_language, greetings_by_language["english"])
+            )
             self._save_turn(session_id, query, ai_response, current_filters, current_props, "greeting")
             return {
                 "success":          True,
@@ -439,6 +458,10 @@ class ChatService:
                 "near_metro":  ("metro",),
                 "furnished":   ("furnished",),
                 "rent_type":   ("lease", "monthly", "month to month"),
+                "apartment_type": (
+                    "office", "workspace", "co-working", "coworking",
+                    "retail", "shop", "store", "showroom", "warehouse", "godown",
+                ),
             }
             for field, keywords in field_keywords.items():
                 if filters.get(field) and not any(kw in q_lower_sanitize for kw in keywords):

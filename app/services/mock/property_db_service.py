@@ -317,6 +317,20 @@ class PropertyDBService:
                 "$options": "i"
             }
 
+        # ── Commercial sub-type isolation ────────────────────────────────────
+        # apartmentType stores the specific kind of commercial space (e.g.
+        # "retail", "office", "warehouse"). Only ever applied alongside
+        # property_type="commercial" (enforced upstream in SearchFilters), so
+        # a user asking for "office space" doesn't get shown retail/warehouse
+        # listings and vice versa. Regex substring match (not anchored) since
+        # the DB may store richer strings like "Retail Space".
+        apartment_type = filters.get("apartment_type")
+        if apartment_type:
+            query["apartmentType"] = {
+                "$regex":   re.escape(apartment_type),
+                "$options": "i"
+            }
+
         return query
 
     def get_by_id(self, property_id: str) -> dict:
