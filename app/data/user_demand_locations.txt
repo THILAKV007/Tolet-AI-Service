@@ -180,3 +180,5 @@
 [2026-07-15 11:05:15] Location: Ashok Nagar | Query: i want residential property from ashok nagar
 [2026-07-15 11:09:44] Location: Ashok Nagar | Query: i want residential property from ashok nagar
 [2026-07-17 05:50:23] Location: Chennai | Query: i want apartment only not house
+[2026-08-18 12:24:43] Location: Anna Nagar | Query: can i get property from anna nagar
+[2026-08-18 12:27:55] Location: Anna Nagar | Query: i want property from anna nagar

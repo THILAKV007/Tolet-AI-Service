@@ -1,0 +1,26 @@
+Agent Flow
+
+Agent Onboarding Flow
+
+Step 1: Open the ToLet.city landing page.
+Step 2: Scroll down to explore the Landlord Features.
+Step 3: Click Join as an Agent Partner and select Register.
+Step 4: Complete the registration using Email OTP authentication and verify your email.
+Step 5: Select Channel Partner as your category.
+Step 6: Enter your basic details, including Name and Mobile Number.
+Step 7: Under Detailed Information, select Yes and click Proceed as Channel Partner by approving & accepting 50 % brokerage fees.
+Step 8: Enter your RERA ID. If you don't have a RERA ID, click Continue Without RERA ID.
+Step 9: Enter your Postal Code and Address.
+Step 10: Upload the required KYC documents for verification.
+Step 11: Once registration is completed, the Broker Portfolio will open, where you can add and manage properties. 
+
+Listing Property 
+
+Step 1: Click Add Property.
+Step 2: Click Continue to confirm that you are the landlord.
+Step 3: Under Basic Information, select the property type: Residential, Commercial, or PG.
+Step 4: Select the Property Category/Type.
+Step 5: Select the Rent Type (Rent or Lease).
+Step 6: Complete all 5 steps of the property listing form.
+Step 7: Upload the property images.
+Step 8: Click Submit Listing. After submission, the property will undergo verification and may take up to 24 hours for approval.

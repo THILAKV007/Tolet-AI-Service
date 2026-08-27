@@ -1,0 +1,24 @@
+Tenant Flow 
+
+Tenant Flow (Guest)
+
+Step 1: Open the ToLet.city landing page.
+Step 2: Click Search Property.
+Step 3: Enter the property type, budget, and preferred location.
+Step 4: View the property recommendations in the ToLet AI chat.
+Step 5: Click View Details to open the selected property.
+Step 6: Scroll to view the complete property details.
+Step 7: To access the property owner's contact details, 
+Step 8: Click Unlock Contact. Register or log in to ToLet, complete the ₹99 payment, and the owner's Name, Mobile Number, and Email ID will be displayed.
+
+Tenant Flow (Login)
+Step 1: Open the ToLet.city landing page.
+Step 2: Register as a new user by creating a ToLet account, then log in.
+Step 3: Click Search Property.
+Step 4: Enter the property type, budget, and preferred location.
+Step 5: View the property recommendations in the ToLet AI chat.
+Step 6: Click View Details to open the selected property.
+Step 7: Scroll through the property details.
+Step 8: Click Unlock Contact.
+Step 9: Complete the ₹99 payment.
+Step 10: View the property owner's Name, Mobile Number, and Email ID.

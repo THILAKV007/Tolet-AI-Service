@@ -1,0 +1,24 @@
+Landlord Flow 
+
+ Account Creation
+
+Step 1: Open the ToLet.city landing page.
+Step 2: Scroll down to explore landlord features.
+Step 3: Click list your property or Register as landlord. 
+Step 4: Register yourself by completing email OTP authentication & verify.
+Step 5: Choose your category by landlord.
+Step 6: Enter basic details (Name & Mobile number)
+Step 7:  Detailed information click No and click proceed as landlord.
+Step 8:  Enter your postal code & address 
+Step 9:  Upload KYC document for verification 
+Step 10 :  Landlord portfolio will open ,You can add property  
+
+Listing Property 
+Step 1: Click Add Property.
+Step 2: Click Continue to confirm that you are the landlord.
+Step 3: Under Basic Information, select the property type: Residential, Commercial, or PG.
+Step 4: Select the Property Category/Type.
+Step 5: Select the Rent Type (Rent or Lease).
+Step 6: Complete all 5 steps of the property listing form.
+Step 7: Upload the property images.
+Step 8: Click Submit Listing. After submission, the property will undergo verification and may take up to 24 hours for approva
