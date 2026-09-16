@@ -8,7 +8,7 @@ Step 3: Click Join as an Agent Partner and select Register.
 Step 4: Complete the registration using Email OTP authentication and verify your email.
 Step 5: Select Channel Partner as your category.
 Step 6: Enter your basic details, including Name and Mobile Number.
-Step 7: Under Detailed Information, select Yes and click Proceed as Channel Partner by approving & accepting 50 % brokerage fees.
+Step 7: Under Detailed Information, select Yes and click Proceed as Channel Partner.
 Step 8: Enter your RERA ID. If you don't have a RERA ID, click Continue Without RERA ID.
 Step 9: Enter your Postal Code and Address.
 Step 10: Upload the required KYC documents for verification.
